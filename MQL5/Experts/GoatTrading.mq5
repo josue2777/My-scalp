@@ -13,6 +13,8 @@ enum LotModeEnum { FIXED_LOT, AUTO_RISK };
 enum TPSLModeEnum { PRICE_LEVEL, PIPS };
 
 //--- Input Parameters
+input bool Bot_Active = true;            // Bot Active (True=On, False=Off & Close Trades)
+
 input group "--- Gestion des lots ---"
 input LotModeEnum LotMode = AUTO_RISK;    // Mode de lot
 input double Risk_Percent = 2.0;         // % du capital risqué (si applicable)
@@ -74,6 +76,41 @@ double CalculateLot()
    if(lot > maxLot) lot = maxLot;
 
    return lot;
+}
+
+//+------------------------------------------------------------------+
+//| Close all open positions for the current symbol                  |
+//+------------------------------------------------------------------+
+void CloseAllPositions()
+{
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(PositionSelectByTicket(ticket))
+      {
+         if(PositionGetString(POSITION_SYMBOL) == _Symbol)
+         {
+            MqlTradeRequest request = {};
+            MqlTradeResult result = {};
+            ENUM_POSITION_TYPE type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+            double volume = PositionGetDouble(POSITION_VOLUME);
+            double price = (type == POSITION_TYPE_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_BID) : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+
+            request.action = TRADE_ACTION_DEAL;
+            request.position = ticket;
+            request.symbol = _Symbol;
+            request.volume = volume;
+            request.type = (type == POSITION_TYPE_BUY) ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
+            request.price = price;
+            request.deviation = 10;
+            request.comment = "CLOSE ALL (GOAT)";
+            request.type_filling = ORDER_FILLING_IOC;
+
+            if(!OrderSend(request, result))
+               Print("CloseAll FAILED for ticket ", ticket, ". Error: ", GetLastError());
+         }
+      }
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -314,6 +351,13 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTick()
 {
+   if(!Bot_Active)
+   {
+      CloseAllPositions();
+      Comment("GOAT TRADING: EA DISABLED - TRADES CLOSED");
+      return;
+   }
+
    UpdateDashboard();
    ManageTP_SL();
 

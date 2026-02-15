@@ -14,7 +14,10 @@ GOAT TRADING is a high-performance scalping Expert Advisor (EA) designed for aut
 
 ## 3. Configuration Parameters
 
-### A. Lot Management
+### A. Global Control
+- **Bot Active**: Toggle to `true` to enable the EA. If set to `false`, the EA stops all operations AND closes all open positions for the current symbol.
+
+### B. Lot Management
 - **Lot Mode**: Choose between `FIXED_LOT` or `AUTO_RISK` (bracket-based).
 - **Fixed Lot**: The volume used if Fixed Lot mode is active.
 
