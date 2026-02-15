@@ -25,6 +25,7 @@ GOAT TRADING is a high-performance scalping Expert Advisor (EA) designed for aut
 - **Buy Count**: Number of BUY orders to open.
 - **Sell Count**: Number of SELL orders to open.
 - **Execute Orders**: Toggle to `true` to trigger the opening of orders. Once trades are opened, the EA prevents multiple executions on the same "activation".
+- **Only If No Open Trades**: If set to `true`, the EA will not open new orders if there is already at least one open position on the current symbol.
 
 ### C. TP / SL Management
 - **TP/SL Mode**: Choose between `PRICE_LEVEL` or `PIPS`.

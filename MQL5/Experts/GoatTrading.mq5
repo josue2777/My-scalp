@@ -24,6 +24,7 @@ input group "--- Ouverture des ordres ---"
 input int Buy_Count = 5;                 // Nombre de BUY à ouvrir
 input int Sell_Count = 0;                // Nombre de SELL à ouvrir
 input bool Execute_Orders = true;        // Activer l'ouverture automatique
+input bool Only_If_No_Open_Trades = false; // Bloquer si un trade est ouvert
 
 input group "--- TP / SL Global ---"
 input TPSLModeEnum TP_SL_Mode = PRICE_LEVEL; // Mode TP/SL (Prix ou Pips)
@@ -365,7 +366,16 @@ void OnTick()
    {
       if(!ordersExecuted)
       {
-         OpenMultipleOrders();
+         bool canOpen = true;
+         if(Only_If_No_Open_Trades && (lastBuyCount + lastSellCount) > 0)
+         {
+            canOpen = false;
+         }
+
+         if(canOpen)
+         {
+            OpenMultipleOrders();
+         }
       }
    }
    else
