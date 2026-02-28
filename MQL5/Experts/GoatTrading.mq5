@@ -26,6 +26,11 @@ input int Sell_Count = 0;                // Nombre de SELL à ouvrir
 input bool Execute_Orders = true;        // Activer l'ouverture automatique
 input bool Only_If_No_Open_Trades = false; // Bloquer si un trade est ouvert
 
+input group "--- Telegram Settings ---"
+input string Telegram_Token = "";        // Telegram Bot Token
+input long Telegram_ChatID = 0;          // Telegram Chat ID
+input int Telegram_Polling_Sec = 3;      // Intervalle de lecture (sec)
+
 input group "--- TP / SL Global ---"
 input TPSLModeEnum TP_SL_Mode = PRICE_LEVEL; // Mode TP/SL (Prix ou Pips)
 input double Global_TP_Buy = 71311.0;    // Global TP BUY
@@ -46,6 +51,145 @@ input int Trades_Level3 = 0;             // Nombre de trades Niveau 3
 bool ordersExecuted = false;
 int lastBuyCount = 0;
 int lastSellCount = 0;
+long last_telegram_update_id = 0;
+
+//--- Modifiable Global States (initialized from inputs)
+bool ext_Bot_Active;
+double ext_Global_TP_Buy, ext_Global_SL_Buy;
+double ext_Global_TP_Sell, ext_Global_SL_Sell;
+
+//+------------------------------------------------------------------+
+//| Send a message to Telegram                                       |
+//+------------------------------------------------------------------+
+void SendTelegramMessage(string message)
+{
+   if(Telegram_Token == "" || Telegram_ChatID == 0) return;
+
+   string url = "https://api.telegram.org/bot" + Telegram_Token + "/sendMessage";
+   string payload = "chat_id=" + IntegerToString(Telegram_ChatID) + "&text=" + message;
+   char data[], result[];
+   string headers;
+
+   StringToCharArray(payload, data);
+
+   int res = WebRequest("POST", url, NULL, 5000, data, result, headers);
+
+   if(res == -1)
+      Print("WebRequest Error: ", GetLastError());
+}
+
+//+------------------------------------------------------------------+
+//| Fetch new messages from Telegram                                 |
+//+------------------------------------------------------------------+
+void FetchTelegramUpdates()
+{
+   if(Telegram_Token == "") return;
+
+   string url = "https://api.telegram.org/bot" + Telegram_Token + "/getUpdates?offset=" + IntegerToString(last_telegram_update_id + 1);
+   char data[], result[];
+   string headers;
+
+   int res = WebRequest("GET", url, NULL, 5000, data, result, headers);
+
+   if(res == 200)
+   {
+      string response = CharArrayToString(result);
+
+      // Look for multiple messages in response
+      int msgPos = StringFind(response, "\"text\"");
+      while(msgPos != -1)
+      {
+         string updateIdStr = StringExtract(response, "\"update_id\"");
+         if(updateIdStr != "") last_telegram_update_id = StringToInteger(updateIdStr);
+
+         string text = StringExtract(response, "\"text\"");
+         if(text != "") ProcessTelegramCommand(text);
+
+         // Move to next message if any (simplified)
+         response = StringSubstr(response, msgPos + 6);
+         msgPos = StringFind(response, "\"text\"");
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Simple string parsing helper                                     |
+//+------------------------------------------------------------------+
+string StringExtract(string source, string key)
+{
+   int pos = StringFind(source, key);
+   if(pos == -1) return "";
+
+   int start = pos + StringLen(key);
+   int end = StringFind(source, ",", start);
+   int endBracket = StringFind(source, "}", start);
+   if(end == -1 || (endBracket != -1 && endBracket < end)) end = endBracket;
+
+   string val = StringSubstr(source, start, end - start);
+   StringReplace(val, "\"", "");
+   StringReplace(val, ":", "");
+   StringReplace(val, " ", "");
+   return val;
+}
+
+//+------------------------------------------------------------------+
+//| Parse and execute Telegram commands                              |
+//+------------------------------------------------------------------+
+void ProcessTelegramCommand(string text)
+{
+   StringReplace(text, "+", " "); // Decode spaces if needed
+   StringToUpper(text);
+
+   bool handled = false;
+   string reply = "Command not recognized.";
+
+   // Commands: TP BUY [val], TP SELL [val], SL BUY [val], SL SELL [val], CLOSE, ACTIF [true/false]
+   if(StringFind(text, "TP BUY") != -1)
+   {
+      ext_Global_TP_Buy = StringToDouble(StringSubstr(text, StringFind(text, "BUY") + 4));
+      reply = "Global TP BUY updated to " + DoubleToString(ext_Global_TP_Buy, 5);
+      handled = true;
+   }
+   else if(StringFind(text, "SL BUY") != -1)
+   {
+      ext_Global_SL_Buy = StringToDouble(StringSubstr(text, StringFind(text, "BUY") + 4));
+      reply = "Global SL BUY updated to " + DoubleToString(ext_Global_SL_Buy, 5);
+      handled = true;
+   }
+   else if(StringFind(text, "TP SELL") != -1)
+   {
+      ext_Global_TP_Sell = StringToDouble(StringSubstr(text, StringFind(text, "SELL") + 5));
+      reply = "Global TP SELL updated to " + DoubleToString(ext_Global_TP_Sell, 5);
+      handled = true;
+   }
+   else if(StringFind(text, "SL SELL") != -1)
+   {
+      ext_Global_SL_Sell = StringToDouble(StringSubstr(text, StringFind(text, "SELL") + 5));
+      reply = "Global SL SELL updated to " + DoubleToString(ext_Global_SL_Sell, 5);
+      handled = true;
+   }
+   else if(StringFind(text, "FERMER") != -1 || StringFind(text, "CLOSE") != -1)
+   {
+      CloseAllPositions();
+      reply = "All positions closed.";
+      handled = true;
+   }
+   else if(StringFind(text, "ACTIF TRUE") != -1 || StringFind(text, "ON") != -1)
+   {
+      ext_Bot_Active = true;
+      reply = "Bot activated.";
+      handled = true;
+   }
+   else if(StringFind(text, "ACTIF FALSE") != -1 || StringFind(text, "OFF") != -1)
+   {
+      ext_Bot_Active = false;
+      reply = "Bot deactivated and trades closed.";
+      handled = true;
+   }
+
+   if(handled)
+      SendTelegramMessage(reply);
+}
 
 //+------------------------------------------------------------------+
 //| Calculate lot size based on capital brackets                     |
@@ -167,7 +311,7 @@ void ManageTP_SL()
          if(type == POSITION_TYPE_BUY)
          {
             buyCount++;
-            newSL = (TP_SL_Mode == PRICE_LEVEL) ? Global_SL_Buy : (Global_SL_Buy > 0 ? openPrice - Global_SL_Buy * point * pipAdjust : 0);
+            newSL = (TP_SL_Mode == PRICE_LEVEL) ? ext_Global_SL_Buy : (ext_Global_SL_Buy > 0 ? openPrice - ext_Global_SL_Buy * point * pipAdjust : 0);
 
             if(Use_MultiLevel_TP)
             {
@@ -178,17 +322,17 @@ void ManageTP_SL()
                else if(buyCount <= (Trades_Level1 + Trades_Level2 + Trades_Level3) && Trades_Level3 > 0)
                   newTP = (TP_SL_Mode == PRICE_LEVEL) ? TP_Level3 : (TP_Level3 > 0 ? openPrice + TP_Level3 * point * pipAdjust : 0);
                else
-                  newTP = (TP_SL_Mode == PRICE_LEVEL) ? Global_TP_Buy : (Global_TP_Buy > 0 ? openPrice + Global_TP_Buy * point * pipAdjust : 0);
+                  newTP = (TP_SL_Mode == PRICE_LEVEL) ? ext_Global_TP_Buy : (ext_Global_TP_Buy > 0 ? openPrice + ext_Global_TP_Buy * point * pipAdjust : 0);
             }
             else
             {
-               newTP = (TP_SL_Mode == PRICE_LEVEL) ? Global_TP_Buy : (Global_TP_Buy > 0 ? openPrice + Global_TP_Buy * point * pipAdjust : 0);
+               newTP = (TP_SL_Mode == PRICE_LEVEL) ? ext_Global_TP_Buy : (ext_Global_TP_Buy > 0 ? openPrice + ext_Global_TP_Buy * point * pipAdjust : 0);
             }
          }
          else if(type == POSITION_TYPE_SELL)
          {
             sellCount++;
-            newSL = (TP_SL_Mode == PRICE_LEVEL) ? Global_SL_Sell : (Global_SL_Sell > 0 ? openPrice + Global_SL_Sell * point * pipAdjust : 0);
+            newSL = (TP_SL_Mode == PRICE_LEVEL) ? ext_Global_SL_Sell : (ext_Global_SL_Sell > 0 ? openPrice + ext_Global_SL_Sell * point * pipAdjust : 0);
 
             if(Use_MultiLevel_TP)
             {
@@ -199,11 +343,11 @@ void ManageTP_SL()
                else if(sellCount <= (Trades_Level1 + Trades_Level2 + Trades_Level3) && Trades_Level3 > 0)
                   newTP = (TP_SL_Mode == PRICE_LEVEL) ? TP_Level3 : (TP_Level3 > 0 ? openPrice - TP_Level3 * point * pipAdjust : 0);
                else
-                  newTP = (TP_SL_Mode == PRICE_LEVEL) ? Global_TP_Sell : (Global_TP_Sell > 0 ? openPrice - Global_TP_Sell * point * pipAdjust : 0);
+                  newTP = (TP_SL_Mode == PRICE_LEVEL) ? ext_Global_TP_Sell : (ext_Global_TP_Sell > 0 ? openPrice - ext_Global_TP_Sell * point * pipAdjust : 0);
             }
             else
             {
-               newTP = (TP_SL_Mode == PRICE_LEVEL) ? Global_TP_Sell : (Global_TP_Sell > 0 ? openPrice - Global_TP_Sell * point * pipAdjust : 0);
+               newTP = (TP_SL_Mode == PRICE_LEVEL) ? ext_Global_TP_Sell : (ext_Global_TP_Sell > 0 ? openPrice - ext_Global_TP_Sell * point * pipAdjust : 0);
             }
          }
 
@@ -246,26 +390,26 @@ void OpenOrder(ENUM_ORDER_TYPE type)
    {
       if(TP_SL_Mode == PRICE_LEVEL)
       {
-         sl = Global_SL_Buy;
-         tp = Global_TP_Buy;
+         sl = ext_Global_SL_Buy;
+         tp = ext_Global_TP_Buy;
       }
       else
       {
-         if(Global_SL_Buy > 0) sl = price - Global_SL_Buy * point * pipAdjust;
-         if(Global_TP_Buy > 0) tp = price + Global_TP_Buy * point * pipAdjust;
+         if(ext_Global_SL_Buy > 0) sl = price - ext_Global_SL_Buy * point * pipAdjust;
+         if(ext_Global_TP_Buy > 0) tp = price + ext_Global_TP_Buy * point * pipAdjust;
       }
    }
    else
    {
       if(TP_SL_Mode == PRICE_LEVEL)
       {
-         sl = Global_SL_Sell;
-         tp = Global_TP_Sell;
+         sl = ext_Global_SL_Sell;
+         tp = ext_Global_TP_Sell;
       }
       else
       {
-         if(Global_SL_Sell > 0) sl = price + Global_SL_Sell * point * pipAdjust;
-         if(Global_TP_Sell > 0) tp = price - Global_TP_Sell * point * pipAdjust;
+         if(ext_Global_SL_Sell > 0) sl = price + ext_Global_SL_Sell * point * pipAdjust;
+         if(ext_Global_TP_Sell > 0) tp = price - ext_Global_TP_Sell * point * pipAdjust;
       }
    }
 
@@ -336,6 +480,16 @@ void UpdateDashboard()
 //+------------------------------------------------------------------+
 int OnInit()
 {
+   // Initialize modifiable globals from inputs
+   ext_Bot_Active = Bot_Active;
+   ext_Global_TP_Buy = Global_TP_Buy;
+   ext_Global_SL_Buy = Global_SL_Buy;
+   ext_Global_TP_Sell = Global_TP_Sell;
+   ext_Global_SL_Sell = Global_SL_Sell;
+
+   if(Telegram_Token != "" && Telegram_Polling_Sec > 0)
+      EventSetTimer(Telegram_Polling_Sec);
+
    return(INIT_SUCCEEDED);
 }
 
@@ -344,7 +498,16 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
+   EventKillTimer();
    Comment("");
+}
+
+//+------------------------------------------------------------------+
+//| Timer function                                                   |
+//+------------------------------------------------------------------+
+void OnTimer()
+{
+   FetchTelegramUpdates();
 }
 
 //+------------------------------------------------------------------+
@@ -352,9 +515,9 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTick()
 {
-   if(!Bot_Active)
+   if(!ext_Bot_Active)
    {
-      CloseAllPositions();
+      if(PositionsTotal() > 0) CloseAllPositions();
       Comment("GOAT TRADING: EA DISABLED - TRADES CLOSED");
       return;
    }

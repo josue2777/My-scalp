@@ -56,5 +56,28 @@ GOAT TRADING is a high-performance scalping Expert Advisor (EA) designed for aut
 5. Restart MT5 or refresh the Navigator panel.
 6. Drag the EA onto a chart and ensure "Algo Trading" is enabled.
 
+## 6. Telegram Integration Guide
+To control the bot via Telegram, follow these steps:
+
+1. **Create a Bot**:
+   - Message **@BotFather** on Telegram.
+   - Send `/newbot` and follow instructions to get your **Bot Token**.
+2. **Get your Chat ID**:
+   - Message **@userinfobot** to get your personal **Chat ID**.
+3. **Configure MT5**:
+   - Open MT5 > `Tools` > `Options` > `Expert Advisors`.
+   - Check **"Allow WebRequest for listed URL"**.
+   - Add `https://api.telegram.org`.
+4. **EA Settings**:
+   - Paste your **Token** and **Chat ID** into the EA inputs.
+   - Note: Commands sent via Telegram update the bot's *internal state*. These changes are not reflected in the input parameter UI but are active in the bot's logic.
+
+### Supported Commands:
+- `TP BUY 72500` / `SL BUY 69000`
+- `TP SELL 71000` / `SL SELL 73000`
+- `CLOSE` or `FERMER` (Closes all positions)
+- `ON` or `ACTIF TRUE` (Activates the bot)
+- `OFF` or `ACTIF FALSE` (Deactivates the bot and closes trades)
+
 ---
 *Developed by Jules - Software Engineer.*
