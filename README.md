@@ -82,12 +82,32 @@ To control the bot via Telegram, follow these steps:
 - `OFF` or `ACTIF FALSE`: Deactivates the bot and closes all trades.
 
 ## 7. How to Use
-1. **Setup**: Follow the installation steps and Telegram guide.
-2. **Dashboard**: Look at the top-right of your chart. The **Gold Egyptian Cat** represents your bot.
-   - **Awake**: The bot is active and monitoring trades. Its eyes rotate every 30s.
-   - **Sleeping**: The bot is disabled and all trades for this symbol have been closed.
-3. **Execution**: Toggle `Execute Orders` to open a batch, or use Telegram commands `BUY` / `SELL`.
-4. **Safety**: Use `Bot Active` or Telegram `OFF` to immediately stop everything and clear positions.
+
+### A. Telegram Remote Control
+You can open batches of trades directly from Telegram:
+- **`BUY`** or **`ACHAT`**: Opens a batch of BUY orders. The number of orders is determined by the `Buy Count` parameter in MT5.
+- **`SELL`** or **`VENTE`**: Opens a batch of SELL orders. The number of orders is determined by the `Sell Count` parameter in MT5.
+- **Dynamic Updates**: You can also send `TP BUY 72000` or `SL SELL 50 pips` to update targets for all current and future trades in the session.
+
+### B. Multi-TP Mode (Partial Exits)
+To use staggered profit targets:
+1. Set **`Use Multi-Level TP`** to `true`.
+2. Define your levels:
+   - **`TP Level 1`**: The target (Price or Pips) for the first group.
+   - **`Trades Level 1`**: How many trades in the batch should hit this target.
+   - *Repeat for Level 2 and 3.*
+3. If a trade is not covered by any level, it falls back to the **Global TP**.
+*Example: If you open 5 BUYs, you can set Level 1 to 20 pips for 2 trades, and Level 2 to 50 pips for the remaining 3.*
+
+### C. The Dashboard (Egyptian Cat)
+The **Gold Egyptian Cat** at the top-right represents your bot's soul:
+- **Awake**: Active and alert. Its eyes look around every 30 seconds.
+- **Sleeping**: Bot is deactivated.
+- **Movement**: Every 2 minutes, the cat will elegantly shift its position on the right side of the chart.
+- **Info Panel**: The data (Balance, Profit, etc.) is always locked on the top-left for clear reading.
+
+### D. Safety
+Use **`Bot Active`** (MT5) or Telegram **`OFF`** to immediately stop all logic and close every open position on the symbol.
 
 ---
 *Developed by Jules - Software Engineer.*
