@@ -8,6 +8,9 @@
 #property version   "1.00"
 #property strict
 
+#include <Trade\Trade.mqh>
+CTrade trade;
+
 //--- Enums
 enum LotModeEnum { FIXED_LOT, AUTO_RISK };
 enum TPSLModeEnum { PRICE_LEVEL, PIPS };
@@ -52,6 +55,10 @@ bool ordersExecuted = false;
 int lastBuyCount = 0;
 int lastSellCount = 0;
 long last_telegram_update_id = 0;
+
+//--- Dashboard Animation
+int current_eye_state = 0;
+datetime last_eye_change = 0;
 
 //--- Modifiable Global States (initialized from inputs)
 bool ext_Bot_Active;
@@ -195,6 +202,7 @@ void ProcessTelegramCommand(string text)
    else if(StringFind(text, "ACTIF FALSE") != -1 || StringFind(text, "OFF") != -1)
    {
       ext_Bot_Active = false;
+      CloseAllPositions();
       reply = "Bot deactivated and trades closed.";
       handled = true;
    }
@@ -247,24 +255,9 @@ void CloseAllPositions()
       {
          if(PositionGetString(POSITION_SYMBOL) == _Symbol)
          {
-            MqlTradeRequest request = {};
-            MqlTradeResult result = {};
-            ENUM_POSITION_TYPE type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
-            double volume = PositionGetDouble(POSITION_VOLUME);
-            double price = (type == POSITION_TYPE_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_BID) : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-
-            request.action = TRADE_ACTION_DEAL;
-            request.position = ticket;
-            request.symbol = _Symbol;
-            request.volume = volume;
-            request.type = (type == POSITION_TYPE_BUY) ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
-            request.price = price;
-            request.deviation = 10;
-            request.comment = "CLOSE ALL (GOAT)";
-            request.type_filling = ORDER_FILLING_IOC;
-
-            if(!OrderSend(request, result))
-               Print("CloseAll FAILED for ticket ", ticket, ". Error: ", GetLastError());
+            trade.SetExpertMagicNumber(0); // Optional: filter by magic if needed
+            if(!trade.PositionClose(ticket))
+               Print("CloseAll FAILED for ticket ", ticket, ". Error: ", trade.ResultRetcodeDescription());
          }
       }
    }
@@ -451,6 +444,48 @@ void OpenMultipleOrders()
 }
 
 //+------------------------------------------------------------------+
+//| Get the ASCII cat head based on bot state                        |
+//+------------------------------------------------------------------+
+string GetCatHead()
+{
+   string cat = "";
+   if(!ext_Bot_Active)
+   {
+      // Sleeping Egyptian Cat
+      cat =  "       /\\____/\\       \n";
+      cat += "      /        \\      \n";
+      cat += "     (  -    -  )     \n";
+      cat += "      (   z    )      \n";
+      cat += "       )      (       \n";
+      cat += "      /        \\      \n";
+      cat += "     (          )     \n";
+      cat += "    / \\________/ \\    \n";
+      cat += "    \\____________/    \n";
+   }
+   else
+   {
+      // Awake Egyptian Cat with rotating eyes
+      string eyes = "o    o";
+      int state = (int)((TimeLocal() / 30) % 4);
+      if(state == 0) eyes = "u    u"; // Looking down
+      else if(state == 1) eyes = "<    <"; // Looking left
+      else if(state == 2) eyes = "o    o"; // Looking center
+      else if(state == 3) eyes = ">    >"; // Looking right
+
+      cat =  "       /\\____/\\       \n";
+      cat += "      /        \\      \n";
+      cat += "     (  " + eyes + "  )     \n";
+      cat += "      (   ^    )      \n";
+      cat += "       )      (       \n";
+      cat += "      /        \\      \n";
+      cat += "     (          )     \n";
+      cat += "    / \\________/ \\    \n";
+      cat += "    \\____________/    \n";
+   }
+   return cat;
+}
+
+//+------------------------------------------------------------------+
 //| Update the dashboard on chart                                    |
 //+------------------------------------------------------------------+
 void UpdateDashboard()
@@ -472,14 +507,18 @@ void UpdateDashboard()
    }
 
    string lotStr = (LotMode == FIXED_LOT) ? "FIXED_LOT" : "AUTO_RISK";
+   string status = ext_Bot_Active ? "ACTIVE" : "DISABLED";
 
-   string dashboard = "--- GOAT TRADING DASHBOARD ---\n";
+   string dashboard = GetCatHead();
+   dashboard += "-------------------------------\n";
+   dashboard += "   GOAT TRADING [" + status + "]\n";
+   dashboard += "-------------------------------\n";
    dashboard += "Balance: " + DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2) + "\n";
-   dashboard += "Equity: " + DoubleToString(AccountInfoDouble(ACCOUNT_EQUITY), 2) + "\n";
-   dashboard += "Profit: " + DoubleToString(AccountInfoDouble(ACCOUNT_PROFIT), 2) + "\n";
-   dashboard += "Total BUY: " + IntegerToString(totalBuy) + "\n";
-   dashboard += "Total SELL: " + IntegerToString(totalSell) + "\n";
-   dashboard += "Lot Mode: " + lotStr;
+   dashboard += "Equity:  " + DoubleToString(AccountInfoDouble(ACCOUNT_EQUITY), 2) + "\n";
+   dashboard += "Profit:  " + DoubleToString(AccountInfoDouble(ACCOUNT_PROFIT), 2) + "\n";
+   dashboard += "Trades:  BUY[" + IntegerToString(totalBuy) + "] SELL[" + IntegerToString(totalSell) + "]\n";
+   dashboard += "Lotting: " + lotStr + "\n";
+   dashboard += "-------------------------------";
 
    Comment(dashboard);
 
@@ -520,6 +559,7 @@ void OnDeinit(const int reason)
 void OnTimer()
 {
    FetchTelegramUpdates();
+   UpdateDashboard();
 }
 
 //+------------------------------------------------------------------+
@@ -527,14 +567,14 @@ void OnTimer()
 //+------------------------------------------------------------------+
 void OnTick()
 {
+   UpdateDashboard();
+
    if(!ext_Bot_Active)
    {
       if(PositionsTotal() > 0) CloseAllPositions();
-      Comment("GOAT TRADING: EA DISABLED - TRADES CLOSED");
       return;
    }
 
-   UpdateDashboard();
    ManageTP_SL();
 
    if(Execute_Orders)

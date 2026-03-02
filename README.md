@@ -9,7 +9,7 @@ GOAT TRADING is a high-performance scalping Expert Advisor (EA) designed for aut
 - **Multi-Level Take Profit**: Assigns different TP levels to specific groups of positions (up to 3 levels).
 - **Flexible TP/SL Modes**: Support for both absolute price levels and pips.
 - **Scalping Optimized**: Uses `ORDER_FILLING_IOC` for fast execution and minimal slippage on volatile brokers.
-- **Real-Time Dashboard**: Displays Balance, Equity, Profit, and current trade counts directly on the chart.
+- **Real-Time Dashboard**: Displays Balance, Equity, Profit, and current trade counts directly on the chart with an elegant animated Egyptian Cat interface.
 - **Trade Comments**: All trades are tagged with "GOAT TRADING" for easy identification.
 
 ## 3. Configuration Parameters
