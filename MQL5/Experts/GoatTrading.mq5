@@ -121,14 +121,26 @@ string StringExtract(string source, string key)
    if(pos == -1) return "";
 
    int start = pos + StringLen(key);
-   int end = StringFind(source, ",", start);
-   int endBracket = StringFind(source, "}", start);
-   if(end == -1 || (endBracket != -1 && endBracket < end)) end = endBracket;
+   // Skip colon and quotes
+   while(start < StringLen(source) && (StringSubstr(source, start, 1) == ":" || StringSubstr(source, start, 1) == " " || StringSubstr(source, start, 1) == "\""))
+      start++;
+
+   int end = start;
+   // If it's a string value, find closing quote
+   if(StringFind(source, "\"", pos + StringLen(key)) != -1 && StringFind(source, "\"", pos + StringLen(key)) < StringFind(source, ",", pos + StringLen(key)))
+   {
+      end = StringFind(source, "\"", start);
+   }
+   else // numeric value
+   {
+      end = StringFind(source, ",", start);
+      int endBracket = StringFind(source, "}", start);
+      if(end == -1 || (endBracket != -1 && endBracket < end)) end = endBracket;
+   }
+
+   if(end == -1) return "";
 
    string val = StringSubstr(source, start, end - start);
-   StringReplace(val, "\"", "");
-   StringReplace(val, ":", "");
-   StringReplace(val, " ", "");
    return val;
 }
 
