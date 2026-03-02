@@ -9,7 +9,7 @@ GOAT TRADING is a high-performance scalping Expert Advisor (EA) designed for aut
 - **Multi-Level Take Profit**: Assigns different TP levels to specific groups of positions (up to 3 levels).
 - **Flexible TP/SL Modes**: Support for both absolute price levels and pips.
 - **Scalping Optimized**: Uses `ORDER_FILLING_IOC` for fast execution and minimal slippage on volatile brokers.
-- **Real-Time Dashboard**: Displays Balance, Equity, Profit, and current trade counts directly on the chart with an elegant animated Egyptian Cat interface.
+- **Graphical Dashboard**: Displays Balance, Equity, Profit, and current trade counts in the top-right corner of the chart, featuring a cute animated Egyptian Cat (Gold color).
 - **Trade Comments**: All trades are tagged with "GOAT TRADING" for easy identification.
 
 ## 3. Configuration Parameters
@@ -80,6 +80,14 @@ To control the bot via Telegram, follow these steps:
 - `CLOSE` or `FERMER`: Closes all positions for the current symbol.
 - `ON` or `ACTIF TRUE`: Activates the bot.
 - `OFF` or `ACTIF FALSE`: Deactivates the bot and closes all trades.
+
+## 7. How to Use
+1. **Setup**: Follow the installation steps and Telegram guide.
+2. **Dashboard**: Look at the top-right of your chart. The **Gold Egyptian Cat** represents your bot.
+   - **Awake**: The bot is active and monitoring trades. Its eyes rotate every 30s.
+   - **Sleeping**: The bot is disabled and all trades for this symbol have been closed.
+3. **Execution**: Toggle `Execute Orders` to open a batch, or use Telegram commands `BUY` / `SELL`.
+4. **Safety**: Use `Bot Active` or Telegram `OFF` to immediately stop everything and clear positions.
 
 ---
 *Developed by Jules - Software Engineer.*

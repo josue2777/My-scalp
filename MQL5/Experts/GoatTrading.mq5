@@ -59,6 +59,7 @@ long last_telegram_update_id = 0;
 //--- Dashboard Animation
 int current_eye_state = 0;
 datetime last_eye_change = 0;
+string UI_PREFIX = "GOAT_UI_";
 
 //--- Modifiable Global States (initialized from inputs)
 bool ext_Bot_Active;
@@ -468,55 +469,31 @@ void OpenMultipleOrders()
 }
 
 //+------------------------------------------------------------------+
-//| Get the ASCII cat head based on bot state                        |
+//| Helper to create UI Labels                                       |
 //+------------------------------------------------------------------+
-string GetCatHead()
+void CreateLabel(string name, string text, int x, int y, color clr, int fontSize=9, int anchor=ANCHOR_RIGHT_UPPER)
 {
-   string cat = "";
-   if(!ext_Bot_Active)
-   {
-      // Sleeping Egyptian Cat
-      cat =  "       /\\____/\\       \n";
-      cat += "      /        \\      \n";
-      cat += "     (  -    -  )     \n";
-      cat += "      (   z    )      \n";
-      cat += "       )      (       \n";
-      cat += "      /        \\      \n";
-      cat += "     (          )     \n";
-      cat += "    / \\________/ \\    \n";
-      cat += "    \\____________/    \n";
-   }
-   else
-   {
-      // Awake Egyptian Cat with rotating eyes
-      string eyes = "o    o";
-      int state = (int)((TimeLocal() / 30) % 4);
-      if(state == 0) eyes = "u    u"; // Looking down
-      else if(state == 1) eyes = "<    <"; // Looking left
-      else if(state == 2) eyes = "o    o"; // Looking center
-      else if(state == 3) eyes = ">    >"; // Looking right
+   string objName = UI_PREFIX + name;
+   if(ObjectFind(0, objName) < 0)
+      ObjectCreate(0, objName, OBJ_LABEL, 0, 0, 0);
 
-      cat =  "       /\\____/\\       \n";
-      cat += "      /        \\      \n";
-      cat += "     (  " + eyes + "  )     \n";
-      cat += "      (   ^    )      \n";
-      cat += "       )      (       \n";
-      cat += "      /        \\      \n";
-      cat += "     (          )     \n";
-      cat += "    / \\________/ \\    \n";
-      cat += "    \\____________/    \n";
-   }
-   return cat;
+   ObjectSetString(0, objName, OBJPROP_TEXT, text);
+   ObjectSetInteger(0, objName, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, objName, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, objName, OBJPROP_CORNER, CORNER_RIGHT_UPPER);
+   ObjectSetInteger(0, objName, OBJPROP_COLOR, clr);
+   ObjectSetInteger(0, objName, OBJPROP_FONTSIZE, fontSize);
+   ObjectSetString(0, objName, OBJPROP_FONT, "Courier New");
+   ObjectSetInteger(0, objName, OBJPROP_ANCHOR, anchor);
 }
 
 //+------------------------------------------------------------------+
-//| Update the dashboard on chart                                    |
+//| Update the dashboard on chart (Graphical UI)                     |
 //+------------------------------------------------------------------+
 void UpdateDashboard()
 {
    int totalBuy = 0;
    int totalSell = 0;
-
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
       ulong ticket = PositionGetTicket(i);
@@ -529,25 +506,66 @@ void UpdateDashboard()
          }
       }
    }
-
-   string lotStr = (LotMode == FIXED_LOT) ? "FIXED_LOT" : "AUTO_RISK";
-   string status = ext_Bot_Active ? "ACTIVE" : "DISABLED";
-
-   string dashboard = GetCatHead();
-   dashboard += "-------------------------------\n";
-   dashboard += "   GOAT TRADING [" + status + "]\n";
-   dashboard += "-------------------------------\n";
-   dashboard += "Balance: " + DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2) + "\n";
-   dashboard += "Equity:  " + DoubleToString(AccountInfoDouble(ACCOUNT_EQUITY), 2) + "\n";
-   dashboard += "Profit:  " + DoubleToString(AccountInfoDouble(ACCOUNT_PROFIT), 2) + "\n";
-   dashboard += "Trades:  BUY[" + IntegerToString(totalBuy) + "] SELL[" + IntegerToString(totalSell) + "]\n";
-   dashboard += "Lotting: " + lotStr + "\n";
-   dashboard += "-------------------------------";
-
-   Comment(dashboard);
-
    lastBuyCount = totalBuy;
    lastSellCount = totalSell;
+
+   color catColor = clrGold;
+   color textColor = clrWhite;
+   color statusColor = ext_Bot_Active ? clrLime : clrRed;
+   string statusText = ext_Bot_Active ? "ACTIVE" : "SLEEPING";
+
+   //--- Draw Egyptian Cat (Lying down)
+   string line1, line2, line3, line4, line5;
+   if(!ext_Bot_Active) {
+      line1 = "      |\\      /|      ";
+      line2 = "      | \\____/ |      ";
+      line3 = "      (  -  -  )      ";
+      line4 = "     _ (   z  ) _     ";
+      line5 = "    (m_m)----(m_m)    ";
+   } else {
+      string eyes = "o  o";
+      int state = (int)((TimeLocal() / 30) % 4);
+      if(state == 0) eyes = "u  u";
+      else if(state == 1) eyes = "<  <";
+      else if(state == 2) eyes = "o  o";
+      else if(state == 3) eyes = ">  >";
+
+      line1 = "      |\\      /|      ";
+      line2 = "      | \\____/ |      ";
+      line3 = "      (  " + eyes + "  )      ";
+      line4 = "     _ (   ^  ) _     ";
+      line5 = "    (m_m)----(m_m)    ";
+   }
+
+   int xOff = 220;
+   int yOff = 20;
+   int spacing = 15;
+
+   CreateLabel("Cat1", line1, xOff, yOff, catColor);
+   CreateLabel("Cat2", line2, xOff, yOff + spacing, catColor);
+   CreateLabel("Cat3", line3, xOff, yOff + spacing*2, catColor);
+   CreateLabel("Cat4", line4, xOff, yOff + spacing*3, catColor);
+   CreateLabel("Cat5", line5, xOff, yOff + spacing*4, catColor);
+
+   //--- Draw Info
+   yOff += spacing*6;
+   CreateLabel("Title", "--- GOAT TRADING ---", xOff, yOff, clrAqua, 10);
+   CreateLabel("Status", "STATUS: " + statusText, xOff, yOff + spacing, statusColor, 9);
+   CreateLabel("Balance", "Balance: " + DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2), xOff, yOff + spacing*2, textColor);
+   CreateLabel("Equity", "Equity:  " + DoubleToString(AccountInfoDouble(ACCOUNT_EQUITY), 2), xOff, yOff + spacing*3, textColor);
+   CreateLabel("Profit", "Profit:  " + DoubleToString(AccountInfoDouble(ACCOUNT_PROFIT), 2), xOff, yOff + spacing*4, (AccountInfoDouble(ACCOUNT_PROFIT)>=0?clrLime:clrRed));
+   CreateLabel("Trades", "Trades:  BUY["+IntegerToString(totalBuy)+"] SELL["+IntegerToString(totalSell)+"]", xOff, yOff + spacing*5, textColor);
+
+   ChartRedraw();
+}
+
+//+------------------------------------------------------------------+
+//| Cleanup UI Objects                                               |
+//+------------------------------------------------------------------+
+void CleanupUI()
+{
+   ObjectsDeleteAll(0, UI_PREFIX);
+   Comment("");
 }
 
 //+------------------------------------------------------------------+
@@ -574,7 +592,7 @@ int OnInit()
 void OnDeinit(const int reason)
 {
    EventKillTimer();
-   Comment("");
+   CleanupUI();
 }
 
 //+------------------------------------------------------------------+
