@@ -73,13 +73,21 @@ To control the bot via Telegram, follow these steps:
    - Note: Commands sent via Telegram update the bot's *internal state*. These changes are not reflected in the input parameter UI but are active in the bot's logic.
 
 ### Supported Commands:
-- `BUY` or `ACHAT`: Opens a batch of BUY orders (as defined by Buy Count).
-- `SELL` or `VENTE`: Opens a batch of SELL orders (as defined by Sell Count).
-- `TP BUY 72500` / `SL BUY 69000`
-- `TP SELL 71000` / `SL SELL 73000`
-- `CLOSE` or `FERMER`: Closes all positions for the current symbol.
-- `ON` or `ACTIF TRUE`: Activates the bot.
-- `OFF` or `ACTIF FALSE`: Deactivates the bot and closes all trades.
+- **Trade Execution**:
+  - `BUY` / `ACHAT`: Opens a batch of BUY orders (default count).
+  - `BUY 10`: Opens exactly 10 BUY orders.
+  - `SELL` / `VENTE`: Opens a batch of SELL orders (default count).
+  - `SELL 5`: Opens exactly 5 SELL orders.
+- **Granular Closing**:
+  - `CLOSE` / `FERMER`: Closes all positions for the current symbol.
+  - `CLOSE 3`: Closes the 3 oldest positions.
+- **Target Management**:
+  - `CLOSE PROFIT 50`: Automatically closes all trades when total profit hits $50.
+  - `CLOSE LOSS 100`: Automatically closes all trades when total loss hits -$100.
+  - `TP BUY 72500` / `SL BUY 69000`: Update session targets.
+- **Bot Control**:
+  - `ON` / `ACTIF TRUE`: Activates the bot.
+  - `OFF` / `ACTIF FALSE`: Deactivates the bot and closes all trades immediately.
 
 ## 7. How to Use
 

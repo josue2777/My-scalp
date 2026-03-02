@@ -71,6 +71,8 @@ int tailState = 0;
 bool ext_Bot_Active;
 double ext_Global_TP_Buy, ext_Global_SL_Buy;
 double ext_Global_TP_Sell, ext_Global_SL_Sell;
+double ext_Target_Profit = 0;
+double ext_Target_Loss = 0;
 
 //+------------------------------------------------------------------+
 //| Send a message to Telegram                                       |
@@ -194,10 +196,35 @@ void ProcessTelegramCommand(string text)
       reply = "Global SL SELL updated to " + DoubleToString(ext_Global_SL_Sell, 5);
       handled = true;
    }
+   else if(StringFind(text, "CLOSE PROFIT") != -1)
+   {
+      ext_Target_Profit = StringToDouble(StringSubstr(text, StringFind(text, "PROFIT") + 7));
+      reply = "Target Profit set to $" + DoubleToString(ext_Target_Profit, 2);
+      handled = true;
+   }
+   else if(StringFind(text, "CLOSE LOSS") != -1)
+   {
+      ext_Target_Loss = MathAbs(StringToDouble(StringSubstr(text, StringFind(text, "LOSS") + 5)));
+      reply = "Target Loss set to -$" + DoubleToString(ext_Target_Loss, 2);
+      handled = true;
+   }
    else if(StringFind(text, "FERMER") != -1 || StringFind(text, "CLOSE") != -1)
    {
-      CloseAllPositions();
-      reply = "All positions closed.";
+      int count = (int)StringToInteger(StringSubstr(text, StringFind(text, " ") + 1));
+      if(count > 0)
+      {
+         for(int i=0; i<count && PositionsTotal()>0; i++)
+         {
+            ulong ticket = PositionGetTicket(0);
+            if(PositionSelectByTicket(ticket)) trade.PositionClose(ticket);
+         }
+         reply = "Closed " + IntegerToString(count) + " positions.";
+      }
+      else
+      {
+         CloseAllPositions();
+         reply = "All positions closed.";
+      }
       handled = true;
    }
    else if(StringFind(text, "ACTIF TRUE") != -1 || StringFind(text, "ON") != -1)
@@ -213,33 +240,59 @@ void ProcessTelegramCommand(string text)
       reply = "Bot deactivated and trades closed.";
       handled = true;
    }
-   else if(text == "BUY" || text == "ACHAT")
+   else if(StringFind(text, "BUY") != -1 || StringFind(text, "ACHAT") != -1)
    {
+      int count = (int)StringToInteger(StringSubstr(text, StringFind(text, " ") + 1));
+      if(count <= 0) count = Buy_Count;
+
       if(!ext_Bot_Active) reply = "Error: Bot is DISABLED.";
       else if(Only_If_No_Open_Trades && (lastBuyCount + lastSellCount) > 0) reply = "Error: Active trades exist.";
-      else if(Buy_Count <= 0) reply = "Error: Buy_Count is 0.";
       else
       {
-         for(int i=0; i<Buy_Count; i++) OpenOrder(ORDER_TYPE_BUY);
-         reply = "Executing " + IntegerToString(Buy_Count) + " BUY orders.";
+         for(int i=0; i<count; i++) OpenOrder(ORDER_TYPE_BUY);
+         reply = "Executing " + IntegerToString(count) + " BUY orders.";
       }
       handled = true;
    }
-   else if(text == "SELL" || text == "VENTE")
+   else if(StringFind(text, "SELL") != -1 || StringFind(text, "VENTE") != -1)
    {
+      int count = (int)StringToInteger(StringSubstr(text, StringFind(text, " ") + 1));
+      if(count <= 0) count = Sell_Count;
+
       if(!ext_Bot_Active) reply = "Error: Bot is DISABLED.";
       else if(Only_If_No_Open_Trades && (lastBuyCount + lastSellCount) > 0) reply = "Error: Active trades exist.";
-      else if(Sell_Count <= 0) reply = "Error: Sell_Count is 0.";
       else
       {
-         for(int i=0; i<Sell_Count; i++) OpenOrder(ORDER_TYPE_SELL);
-         reply = "Executing " + IntegerToString(Sell_Count) + " SELL orders.";
+         for(int i=0; i<count; i++) OpenOrder(ORDER_TYPE_SELL);
+         reply = "Executing " + IntegerToString(count) + " SELL orders.";
       }
       handled = true;
    }
 
    if(handled)
       SendTelegramMessage(reply);
+}
+
+//+------------------------------------------------------------------+
+//| Check for profit/loss targets set via Telegram                   |
+//+------------------------------------------------------------------+
+void CheckTargets()
+{
+   double profit = AccountInfoDouble(ACCOUNT_PROFIT);
+
+   if(ext_Target_Profit > 0 && profit >= ext_Target_Profit)
+   {
+      CloseAllPositions();
+      SendTelegramMessage("Target Profit reached ($" + DoubleToString(profit, 2) + "). All positions closed.");
+      ext_Target_Profit = 0;
+   }
+
+   if(ext_Target_Loss > 0 && profit <= -ext_Target_Loss)
+   {
+      CloseAllPositions();
+      SendTelegramMessage("Target Loss reached (-$" + DoubleToString(MathAbs(profit), 2) + "). All positions closed.");
+      ext_Target_Loss = 0;
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -646,6 +699,7 @@ void OnTimer()
 void OnTick()
 {
    UpdateDashboard();
+   CheckTargets();
 
    if(!ext_Bot_Active)
    {
