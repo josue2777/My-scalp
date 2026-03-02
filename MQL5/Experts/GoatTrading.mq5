@@ -206,6 +206,30 @@ void ProcessTelegramCommand(string text)
       reply = "Bot deactivated and trades closed.";
       handled = true;
    }
+   else if(text == "BUY" || text == "ACHAT")
+   {
+      if(!ext_Bot_Active) reply = "Error: Bot is DISABLED.";
+      else if(Only_If_No_Open_Trades && (lastBuyCount + lastSellCount) > 0) reply = "Error: Active trades exist.";
+      else if(Buy_Count <= 0) reply = "Error: Buy_Count is 0.";
+      else
+      {
+         for(int i=0; i<Buy_Count; i++) OpenOrder(ORDER_TYPE_BUY);
+         reply = "Executing " + IntegerToString(Buy_Count) + " BUY orders.";
+      }
+      handled = true;
+   }
+   else if(text == "SELL" || text == "VENTE")
+   {
+      if(!ext_Bot_Active) reply = "Error: Bot is DISABLED.";
+      else if(Only_If_No_Open_Trades && (lastBuyCount + lastSellCount) > 0) reply = "Error: Active trades exist.";
+      else if(Sell_Count <= 0) reply = "Error: Sell_Count is 0.";
+      else
+      {
+         for(int i=0; i<Sell_Count; i++) OpenOrder(ORDER_TYPE_SELL);
+         reply = "Executing " + IntegerToString(Sell_Count) + " SELL orders.";
+      }
+      handled = true;
+   }
 
    if(handled)
       SendTelegramMessage(reply);
