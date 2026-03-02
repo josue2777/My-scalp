@@ -99,12 +99,13 @@ To use staggered profit targets:
 3. If a trade is not covered by any level, it falls back to the **Global TP**.
 *Example: If you open 5 BUYs, you can set Level 1 to 20 pips for 2 trades, and Level 2 to 50 pips for the remaining 3.*
 
-### C. The Dashboard (Egyptian Cat)
-The **Gold Egyptian Cat** at the top-right represents your bot's soul:
-- **Awake**: Active and alert. Its eyes look around every 30 seconds.
-- **Sleeping**: Bot is deactivated.
-- **Movement**: Every 2 minutes, the cat will elegantly shift its position on the right side of the chart.
-- **Info Panel**: The data (Balance, Profit, etc.) is always locked on the top-left for clear reading.
+### C. The Dashboard (Egyptian Maine Coon)
+The **Gold Egyptian Cat** on the left side represents your bot's soul:
+- **Body**: An elongated, elegant side-view design.
+- **Awake**: Active and alert. Its eyes look around every 30 seconds, and its tail oscillates.
+- **Sleeping**: Bot is deactivated (eyes closed, tail still).
+- **Movement**: Every 2 minutes, the cat will elegantly shift its position on the left side of the chart.
+- **Info Panel**: The data (Balance, Profit, etc.) is locked on the top-right in a large, easy-to-read format.
 
 ### D. Safety
 Use **`Bot Active`** (MT5) or Telegram **`OFF`** to immediately stop all logic and close every open position on the symbol.

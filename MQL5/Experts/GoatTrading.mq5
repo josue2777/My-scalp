@@ -61,10 +61,11 @@ int current_eye_state = 0;
 datetime last_eye_change = 0;
 string UI_PREFIX = "GOAT_UI_";
 
-//--- Cat Movement
+//--- Cat Movement & Animation
 int catOffsetX = 0;
 int catOffsetY = 0;
 datetime lastCatMove = 0;
+int tailState = 0;
 
 //--- Modifiable Global States (initialized from inputs)
 bool ext_Bot_Active;
@@ -520,7 +521,7 @@ void UpdateDashboard()
       lastCatMove = TimeCurrent();
       int move = (int)(MathRand() % 4);
       if(move == 0) { catOffsetX = 0; catOffsetY = 0; } // Reset
-      else if(move == 1) { catOffsetX = 30; } // Left
+      else if(move == 1) { catOffsetX = 30; } // Shift
       else if(move == 2) { catOffsetY = 20; } // Down
       else if(move == 3) { catOffsetY = -20; } // Up
    }
@@ -530,62 +531,66 @@ void UpdateDashboard()
    color statusColor = ext_Bot_Active ? clrLime : clrRed;
    string statusText = ext_Bot_Active ? "ACTIVE" : "SLEEPING";
 
-   //--- Draw Info (Left Upper Corner) - Doubled size as requested
-   int xInfo = 30;
-   int yInfo = 30;
-   int spacing = 35; // Double spacing
-   CreateLabel("Title", "  == GOAT TRADING ==", xInfo, yInfo, clrAqua, CORNER_LEFT_UPPER, 24);
-   CreateLabel("Status", "  STATUS: " + statusText, xInfo, yInfo + spacing, statusColor, CORNER_LEFT_UPPER, 20);
-   CreateLabel("Balance", "  Balance: " + DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2), xInfo, yInfo + spacing*2, textColor, CORNER_LEFT_UPPER, 18);
-   CreateLabel("Equity", "  Equity:  " + DoubleToString(AccountInfoDouble(ACCOUNT_EQUITY), 2), xInfo, yInfo + spacing*3, textColor, CORNER_LEFT_UPPER, 18);
-   CreateLabel("Profit", "  Profit:  " + DoubleToString(AccountInfoDouble(ACCOUNT_PROFIT), 2), xInfo, yInfo + spacing*4, (AccountInfoDouble(ACCOUNT_PROFIT)>=0?clrLime:clrRed), CORNER_LEFT_UPPER, 18);
-   CreateLabel("Trades", "  BUY["+IntegerToString(totalBuy)+"]  SELL["+IntegerToString(totalSell)+"]", xInfo, yInfo + spacing*5, textColor, CORNER_LEFT_UPPER, 18);
-   CreateLabel("Lotting", "  Lotting: " + ((LotMode==FIXED_LOT)?"FIXED":"AUTO"), xInfo, yInfo + spacing*6, textColor, CORNER_LEFT_UPPER, 16);
-
-   //--- Draw Egyptian Cat (Right Upper Corner, Lying Down)
-   // Much larger and more detailed (Maine Coon / Egyptian style)
-   string c[12];
+   //--- Draw Egyptian Cat (Left Upper Corner, Side View)
+   string c[13];
+   string tail = (TimeLocal() % 2 == 0) ? "~~ " : " ~ ";
+   string eyes = "o   o";
    if(!ext_Bot_Active) {
-      c[0] = "         /\\           /\\         ";
-      c[1] = "        /  \\_________/  \\        ";
-      c[2] = "       |   /         \\   |       ";
-      c[3] = "       |  (   -   -   )  |       ";
-      c[4] = "        \\  \\    z    /  /        ";
-      c[5] = "         \\__\\_______/__/         ";
-      c[6] = "         /             \\         ";
-      c[7] = "      __/               \\__      ";
-      c[8] = "     /                     \\     ";
-      c[9] = "    (      /\\_______/\\      )    ";
-      c[10]= "     \\____/  m     m  \\____/     ";
-      c[11]= "      [CROSS PAWS MODE: OFF]     ";
+      eyes = "-   -";
+      string z = (TimeLocal() % 2 == 0) ? "z" : "Z";
+      c[0] = "         |\\____/|               ";
+      c[1] = "         /      \\               ";
+      c[2] = "        (  " + eyes + "  )              ";
+      c[3] = "         (   " + z + "    )              ";
+      c[4] = "  _______/        \\_____________ ";
+      c[5] = " /                              \\";
+      c[6] = "|   GOAT EGYPTIAN MAINE COON     |";
+      c[7] = "|      [STATUS: SLEEPING]        |";
+      c[8] = " \\______________________________/ ";
+      c[9] = "   (m__m)             (m__m) " + tail;
+      c[10]= "   \\____/             \\____/     ";
+      c[11]= "                                 ";
+      c[12]= "                                 ";
    } else {
-      string eyes = "o   o";
       int state = (int)((TimeLocal() / 30) % 4);
       if(state == 0) eyes = "u   u";
       else if(state == 1) eyes = "<   <";
       else if(state == 2) eyes = "o   o";
       else if(state == 3) eyes = ">   >";
 
-      c[0] = "         /\\           /\\         ";
-      c[1] = "        /  \\_________/  \\        ";
-      c[2] = "       |   /         \\   |       ";
-      c[3] = "       |  (   " + eyes + "   )  |       ";
-      c[4] = "        \\  \\    ^    /  /        ";
-      c[5] = "         \\__\\_______/__/         ";
-      c[6] = "         /             \\         ";
-      c[7] = "      __/               \\__      ";
-      c[8] = "     /                     \\     ";
-      c[9] = "    (      /\\_______/\\      )    ";
-      c[10]= "     \\____/  m     m  \\____/     ";
-      c[11]= "      [MAINE COON MODE: ON]      ";
+      c[0] = "         |\\____/|               ";
+      c[1] = "         /      \\               ";
+      c[2] = "        (  " + eyes + "  )              ";
+      c[3] = "         (   ^    )              ";
+      c[4] = "  _______/        \\_____________ ";
+      c[5] = " /                              \\";
+      c[6] = "|   GOAT EGYPTIAN MAINE COON     |";
+      c[7] = "|      [STATUS:  ACTIVE ]        |";
+      c[8] = " \\______________________________/ ";
+      c[9] = "   (m__m)             (m__m) " + tail;
+      c[10]= "   \\____/             \\____/     ";
+      c[11]= "                                 ";
+      c[12]= "                                 ";
    }
 
-   int xCat = 350 + catOffsetX;
-   int yCat = 20 + catOffsetY;
-   int cSpacing = 14;
+   int xCat = 30 + catOffsetX;
+   int yCat = 30 + catOffsetY;
+   int cSpacing = 16;
 
-   for(int i=0; i<12; i++)
-      CreateLabel("CatLine"+IntegerToString(i), c[i], xCat, yCat + i*cSpacing, catColor, CORNER_RIGHT_UPPER, 10, ANCHOR_RIGHT_UPPER);
+   for(int i=0; i<11; i++)
+      CreateLabel("CatLine"+IntegerToString(i), c[i], xCat, yCat + i*cSpacing, catColor, CORNER_LEFT_UPPER, 11, ANCHOR_LEFT_UPPER);
+
+   //--- Draw Info (Right Upper Corner) - Large scale
+   int xInfo = 20;
+   int yInfo = 20;
+   int spacing = 38;
+   CreateLabel("Title", "== GOAT TRADING ==", xInfo, yInfo, clrAqua, CORNER_RIGHT_UPPER, 26, ANCHOR_RIGHT_UPPER);
+   CreateLabel("Status", "STATUS: " + statusText, xInfo, yInfo + spacing, statusColor, CORNER_RIGHT_UPPER, 22, ANCHOR_RIGHT_UPPER);
+   CreateLabel("Balance", "Balance: " + DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2), xInfo, yInfo + spacing*2, textColor, CORNER_RIGHT_UPPER, 20, ANCHOR_RIGHT_UPPER);
+   CreateLabel("Equity", "Equity:  " + DoubleToString(AccountInfoDouble(ACCOUNT_EQUITY), 2), xInfo, yInfo + spacing*3, textColor, CORNER_RIGHT_UPPER, 20, ANCHOR_RIGHT_UPPER);
+   CreateLabel("Profit", "Profit:  " + DoubleToString(AccountInfoDouble(ACCOUNT_PROFIT), 2), xInfo, yInfo + spacing*4, (AccountInfoDouble(ACCOUNT_PROFIT)>=0?clrLime:clrRed), CORNER_RIGHT_UPPER, 20, ANCHOR_RIGHT_UPPER);
+   CreateLabel("Trades", "BUY["+IntegerToString(totalBuy)+"] SELL["+IntegerToString(totalSell)+"]", xInfo, yInfo + spacing*5, textColor, CORNER_RIGHT_UPPER, 20, ANCHOR_RIGHT_UPPER);
+   CreateLabel("Lotting", "Lotting: " + ((LotMode==FIXED_LOT)?"FIXED":"AUTO"), xInfo, yInfo + spacing*6, textColor, CORNER_RIGHT_UPPER, 18, ANCHOR_RIGHT_UPPER);
 
    ChartRedraw();
 }
