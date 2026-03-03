@@ -30,7 +30,11 @@ Update your TP/SL for all active and future trades in the current session.
 - **`ON`** or **`ACTIF TRUE`**: Activates the bot logic. The Egyptian Cat will wake up.
 - **`OFF`** or **`ACTIF FALSE`**: Deactivates the bot logic AND closes all current positions immediately. The cat will go to sleep.
 
-## 5. Support & Setup
+## 5. Market Analysis & Visuals
+- **`ANALYSE`**: Returns a technical analysis report (Trend, RSI, Price).
+- **`CAPTURE`** or **`PHOTO`**: Sends a high-quality screenshot of the current chart.
+
+## 6. Support & Setup
 - **`HELP`** or **`AIDE`**: Displays a summary of all commands.
 - **`MYID`**: Shows your unique Telegram Chat ID for use in the bot's input parameters.
 

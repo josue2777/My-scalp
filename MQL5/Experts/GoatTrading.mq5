@@ -221,6 +221,8 @@ void ProcessTelegramCommand(string text)
               "TP/SL BUY [val] - Set BUY TP/SL\n" +
               "TP/SL SELL [val] - Set SELL TP/SL\n" +
               "ON/OFF - Toggle Bot Active\n" +
+              "ANALYSE - Market Technical Analysis\n" +
+              "CAPTURE - Get Chart Screenshot\n" +
               "MYID - Get your Chat ID";
       handled = true;
    }
@@ -228,6 +230,16 @@ void ProcessTelegramCommand(string text)
    {
       reply = "Your Chat ID is: " + IntegerToString(Telegram_ChatID);
       handled = true;
+   }
+   else if(text == "ANALYSE" || text == "ANALYSIS")
+   {
+      reply = GetMarketAnalysis();
+      handled = true;
+   }
+   else if(text == "CAPTURE" || text == "PHOTO" || text == "SCREENSHOT")
+   {
+      SendChartScreenshot();
+      return; // Handled separately
    }
    // Commands: TP BUY [val], TP SELL [val], SL BUY [val], SL SELL [val], CLOSE, ACTIF [true/false]
    else if(StringFind(text, "TP BUY") != -1)
@@ -333,6 +345,107 @@ void ProcessTelegramCommand(string text)
 
    if(handled)
       SendTelegramMessage(reply);
+}
+
+//+------------------------------------------------------------------+
+//| Get a market analysis summary based on RSI and Moving Averages   |
+//+------------------------------------------------------------------+
+string GetMarketAnalysis()
+{
+   double rsi[], ma50[], ma200[];
+   int rsiHandle = iRSI(_Symbol, _Period, 14, PRICE_CLOSE);
+   int ma50Handle = iMA(_Symbol, _Period, 50, 0, MODE_SMA, PRICE_CLOSE);
+   int ma200Handle = iMA(_Symbol, _Period, 200, 0, MODE_SMA, PRICE_CLOSE);
+
+   if(CopyBuffer(rsiHandle, 0, 0, 1, rsi) <= 0 ||
+      CopyBuffer(ma50Handle, 0, 0, 1, ma50) <= 0 ||
+      CopyBuffer(ma200Handle, 0, 0, 1, ma200) <= 0)
+   {
+      IndicatorRelease(rsiHandle);
+      IndicatorRelease(ma50Handle);
+      IndicatorRelease(ma200Handle);
+      return "Analysis Error: Indicators not ready.";
+   }
+
+   IndicatorRelease(rsiHandle);
+   IndicatorRelease(ma50Handle);
+   IndicatorRelease(ma200Handle);
+
+   double price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   string trend = (ma50[0] > ma200[0]) ? "HAUSSIÈRE (MA50 > MA200)" : "BAISSIÈRE (MA50 < MA200)";
+   string rsiText = "RSI(14): " + DoubleToString(rsi[0], 2);
+
+   if(rsi[0] > 70) rsiText += " (SURACHETÉ)";
+   else if(rsi[0] < 30) rsiText += " (SURVENDU)";
+   else rsiText += " (NEUTRE)";
+
+   string analysis = "=== ANALYSE GOAT TRADING ===\n" +
+                     "Symbole: " + _Symbol + " (" + EnumToString(_Period) + ")\n" +
+                     "Prix actuel: " + DoubleToString(price, _Digits) + "\n" +
+                     "Tendance: " + trend + "\n" +
+                     rsiText + "\n" +
+                     "Positions ouvertes: " + IntegerToString(lastBuyCount + lastSellCount);
+
+   return analysis;
+}
+
+//+------------------------------------------------------------------+
+//| Send a screenshot of the current chart to Telegram               |
+//+------------------------------------------------------------------+
+void SendChartScreenshot()
+{
+   string filename = "GoatChart_" + _Symbol + ".png";
+   if(!ChartScreenShot(0, filename, 1200, 800, ALIGN_RIGHT))
+   {
+      SendTelegramMessage("Error: Could not take screenshot.");
+      return;
+   }
+
+   int handle = FileOpen(filename, FILE_READ|FILE_BIN);
+   if(handle == INVALID_HANDLE)
+   {
+      SendTelegramMessage("Error: Could not open screenshot file.");
+      return;
+   }
+
+   int fileSize = (int)FileSize(handle);
+   uchar photoData[];
+   ArrayResize(photoData, fileSize);
+   FileReadArray(handle, photoData);
+   FileClose(handle);
+
+   if(Telegram_Token == "" || Telegram_ChatID == 0) return;
+
+   string url = "https://api.telegram.org/bot" + Telegram_Token + "/sendPhoto";
+   string boundary = "-------GoatBoundary" + IntegerToString((int)TimeCurrent());
+   string headers = "Content-Type: multipart/form-data; boundary=" + boundary + "\r\n";
+
+   string part1 = "--" + boundary + "\r\n" +
+                  "Content-Disposition: form-data; name=\"chat_id\"\r\n\r\n" +
+                  IntegerToString(Telegram_ChatID) + "\r\n" +
+                  "--" + boundary + "\r\n" +
+                  "Content-Disposition: form-data; name=\"photo\"; filename=\"" + filename + "\"\r\n" +
+                  "Content-Type: image/png\r\n\r\n";
+   string part2 = "\r\n--" + boundary + "--\r\n";
+
+   uchar part1Data[], part2Data[], fullData[];
+   StringToCharArray(part1, part1Data, 0, StringLen(part1));
+   StringToCharArray(part2, part2Data, 0, StringLen(part2));
+
+   int totalSize = ArraySize(part1Data) + ArraySize(photoData) + ArraySize(part2Data);
+   ArrayResize(fullData, totalSize);
+
+   int offset = 0;
+   ArrayCopy(fullData, part1Data, offset, 0, ArraySize(part1Data)); offset += ArraySize(part1Data);
+   ArrayCopy(fullData, photoData, offset, 0, ArraySize(photoData)); offset += ArraySize(photoData);
+   ArrayCopy(fullData, part2Data, offset, 0, ArraySize(part2Data));
+
+   char result[];
+   string resultHeaders;
+   int res = WebRequest("POST", url, headers, 10000, fullData, result, resultHeaders);
+
+   if(res == 200) Print("Screenshot sent successfully.");
+   else Print("SendPhoto failed. Code: ", res, " Error: ", GetLastError());
 }
 
 //+------------------------------------------------------------------+
