@@ -987,47 +987,52 @@ void OnDeinit(const int reason)
 }
 
 //+------------------------------------------------------------------+
+//| Helper to check a single timeframe for alerts                    |
+//+------------------------------------------------------------------+
+void CheckSingleTFAlert(ENUM_TIMEFRAMES tf, int handle, datetime &lastAlertTime)
+{
+   if(handle == INVALID_HANDLE) return;
+
+   double buy[], sell[];
+   // Check BUY
+   if(CopyBuffer(handle, Indicator_Buy_Buffer, 1, 1, buy) > 0 && buy[0] != 0 && buy[0] != EMPTY_VALUE)
+   {
+      datetime barTime = (datetime)SeriesInfoInteger(_Symbol, tf, SERIES_LASTBAR_DATE);
+      if(barTime > lastAlertTime)
+      {
+         lastAlertTime = barTime;
+         string msg = "🚨 SIGNAL D'ACHAT DÉTECTÉ (" + EnumToString(tf) + ")\n" +
+                      "Indicateur: " + Custom_Indicator_Name + "\n" +
+                      "Bonjour Monsieur, une opportunité se présente sur " + _Symbol + ".";
+         SendTelegramMessage(msg);
+      }
+   }
+
+   // Check SELL
+   if(CopyBuffer(handle, Indicator_Sell_Buffer, 1, 1, sell) > 0 && sell[0] != 0 && sell[0] != EMPTY_VALUE)
+   {
+      datetime barTime = (datetime)SeriesInfoInteger(_Symbol, tf, SERIES_LASTBAR_DATE);
+      if(barTime > lastAlertTime)
+      {
+         lastAlertTime = barTime;
+         string msg = "🚨 SIGNAL DE VENTE DÉTECTÉ (" + EnumToString(tf) + ")\n" +
+                      "Indicateur: " + Custom_Indicator_Name + "\n" +
+                      "Bonjour Monsieur, le marché semble vouloir descendre sur " + _Symbol + ".";
+         SendTelegramMessage(msg);
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
 //| Check for automatic signals from lucky-reversal across timeframes|
 //+------------------------------------------------------------------+
 void CheckMTFAlerts()
 {
    if(!Enable_MTF_Alerts) return;
 
-   ENUM_TIMEFRAMES periods[] = {PERIOD_M15, PERIOD_M30, PERIOD_H1};
-   datetime *last_alerts[] = {&last_alert_m15, &last_alert_m30, &last_alert_h1};
-   int handles[] = {handle_m15, handle_m30, handle_h1};
-
-   for(int i=0; i<3; i++)
-   {
-      if(handles[i] == INVALID_HANDLE) continue;
-
-      double buy[], sell[];
-      if(CopyBuffer(handles[i], Indicator_Buy_Buffer, 1, 1, buy) > 0 && buy[0] != 0 && buy[0] != EMPTY_VALUE)
-      {
-         datetime barTime = (datetime)SeriesInfoInteger(_Symbol, periods[i], SERIES_LASTBAR_DATE);
-         if(barTime > *last_alerts[i])
-         {
-            *last_alerts[i] = barTime;
-            string msg = "🚨 SIGNAL D'ACHAT DÉTECTÉ (" + EnumToString(periods[i]) + ")\n" +
-                         "Indicateur: " + Custom_Indicator_Name + "\n" +
-                         "Bonjour Monsieur, une opportunité se présente sur " + _Symbol + ".";
-            SendTelegramMessage(msg);
-         }
-      }
-
-      if(CopyBuffer(handles[i], Indicator_Sell_Buffer, 1, 1, sell) > 0 && sell[0] != 0 && sell[0] != EMPTY_VALUE)
-      {
-         datetime barTime = (datetime)SeriesInfoInteger(_Symbol, periods[i], SERIES_LASTBAR_DATE);
-         if(barTime > *last_alerts[i])
-         {
-            *last_alerts[i] = barTime;
-            string msg = "🚨 SIGNAL DE VENTE DÉTECTÉ (" + EnumToString(periods[i]) + ")\n" +
-                         "Indicateur: " + Custom_Indicator_Name + "\n" +
-                         "Bonjour Monsieur, le marché semble vouloir descendre sur " + _Symbol + ".";
-            SendTelegramMessage(msg);
-         }
-      }
-   }
+   CheckSingleTFAlert(PERIOD_M15, handle_m15, last_alert_m15);
+   CheckSingleTFAlert(PERIOD_M30, handle_m30, last_alert_m30);
+   CheckSingleTFAlert(PERIOD_H1, handle_h1, last_alert_h1);
 }
 
 //+------------------------------------------------------------------+
