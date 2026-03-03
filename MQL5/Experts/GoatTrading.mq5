@@ -30,7 +30,7 @@ input bool Execute_Orders = true;        // Activer l'ouverture automatique
 input bool Only_If_No_Open_Trades = false; // Bloquer si un trade est ouvert
 
 input group "--- Telegram Settings ---"
-input string Telegram_Token = "";        // Telegram Bot Token
+input string Telegram_Token = "7801637901:AAHAoFEk3eXcOneF5hpy6FIAuD3R_clEAtw"; // Telegram Bot Token
 input long Telegram_ChatID = 0;          // Telegram Chat ID
 input int Telegram_Polling_Sec = 3;      // Intervalle de lecture (sec)
 
