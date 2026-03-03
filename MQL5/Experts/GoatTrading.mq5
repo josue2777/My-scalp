@@ -195,6 +195,17 @@ void ProcessTelegramCommand(string text)
    StringReplace(text, "_", " "); // Support BotFather menu commands (e.g. /tp_buy -> TP BUY)
    StringToUpper(text);
 
+   // Remove 'COMMANDN' numbering if present (e.g. COMMAND1 BUY -> BUY)
+   if(StringFind(text, "COMMAND") == 0)
+   {
+      int spacePos = StringFind(text, " ");
+      if(spacePos != -1)
+      {
+         text = StringSubstr(text, spacePos + 1);
+         StringTrimLeft(text);
+      }
+   }
+
    bool handled = false;
    string reply = "Command not recognized. Use HELP for a list of commands.";
 
