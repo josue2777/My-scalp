@@ -301,13 +301,13 @@ void ProcessTelegramCommand(string text)
    }
    else if(StringFind(text, "COUNT LEVEL 2") != -1)
    {
-      ext_Trades_Level2 = (int)StringToInteger(StringSubstr(text, StringFind(text, "LEVEL 2") + 9));
+      ext_Trades_Level2 = (int)StringToInteger(StringSubstr(text, StringFind(text, "LEVEL 2") + 8));
       reply = "Trade Count for Level 2 updated to " + IntegerToString(ext_Trades_Level2);
       handled = true;
    }
    else if(StringFind(text, "COUNT LEVEL 3") != -1)
    {
-      ext_Trades_Level3 = (int)StringToInteger(StringSubstr(text, StringFind(text, "LEVEL 3") + 9));
+      ext_Trades_Level3 = (int)StringToInteger(StringSubstr(text, StringFind(text, "LEVEL 3") + 8));
       reply = "Trade Count for Level 3 updated to " + IntegerToString(ext_Trades_Level3);
       handled = true;
    }
