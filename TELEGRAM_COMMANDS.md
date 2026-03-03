@@ -30,5 +30,9 @@ Update your TP/SL for all active and future trades in the current session.
 - **`ON`** or **`ACTIF TRUE`**: Activates the bot logic. The Egyptian Cat will wake up.
 - **`OFF`** or **`ACTIF FALSE`**: Deactivates the bot logic AND closes all current positions immediately. The cat will go to sleep.
 
+## 5. Support & Setup
+- **`HELP`** or **`AIDE`**: Displays a summary of all commands.
+- **`MYID`**: Shows your unique Telegram Chat ID for use in the bot's input parameters.
+
 ---
 *Note: Telegram commands update the bot's internal state. These changes will not be visible in the MT5 Input Parameters window, but they are active in the EA's logic.*

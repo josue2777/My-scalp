@@ -191,13 +191,34 @@ string StringExtract(string source, string key, int startPos = 0)
 void ProcessTelegramCommand(string text)
 {
    StringReplace(text, "+", " "); // Decode spaces if needed
+   StringReplace(text, "/", "");  // Support /command format
    StringToUpper(text);
 
    bool handled = false;
-   string reply = "Command not recognized.";
+   string reply = "Command not recognized. Use HELP for a list of commands.";
 
+   if(text == "HELP" || text == "AIDE")
+   {
+      reply = "GOAT TRADING COMMANDS:\n" +
+              "BUY [count] - Open BUY trades\n" +
+              "SELL [count] - Open SELL trades\n" +
+              "CLOSE - Close all trades\n" +
+              "CLOSE 3 - Close last 3 trades\n" +
+              "CLOSE PROFIT [val] - Target Profit\n" +
+              "CLOSE LOSS [val] - Target Loss\n" +
+              "TP/SL BUY [val] - Set BUY TP/SL\n" +
+              "TP/SL SELL [val] - Set SELL TP/SL\n" +
+              "ON/OFF - Toggle Bot Active\n" +
+              "MYID - Get your Chat ID";
+      handled = true;
+   }
+   else if(text == "MYID")
+   {
+      reply = "Your Chat ID is: " + IntegerToString(Telegram_ChatID);
+      handled = true;
+   }
    // Commands: TP BUY [val], TP SELL [val], SL BUY [val], SL SELL [val], CLOSE, ACTIF [true/false]
-   if(StringFind(text, "TP BUY") != -1)
+   else if(StringFind(text, "TP BUY") != -1)
    {
       ext_Global_TP_Buy = StringToDouble(StringSubstr(text, StringFind(text, "BUY") + 4));
       reply = "Global TP BUY updated to " + DoubleToString(ext_Global_TP_Buy, 5);
