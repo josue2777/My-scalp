@@ -192,6 +192,7 @@ void ProcessTelegramCommand(string text)
 {
    StringReplace(text, "+", " "); // Decode spaces if needed
    StringReplace(text, "/", "");  // Support /command format
+   StringReplace(text, "_", " "); // Support BotFather menu commands (e.g. /tp_buy -> TP BUY)
    StringToUpper(text);
 
    bool handled = false;
