@@ -301,28 +301,32 @@ void ProcessTelegramCommand(string text)
    else if(StringFind(text, "BUY") != -1 || StringFind(text, "ACHAT") != -1)
    {
       int count = (int)StringToInteger(StringSubstr(text, StringFind(text, " ") + 1));
-      if(count <= 0) count = Buy_Count;
+      if(count <= 0) count = (Buy_Count > 0) ? Buy_Count : 1;
 
       if(!ext_Bot_Active) reply = "Error: Bot is DISABLED.";
       else if(Only_If_No_Open_Trades && (lastBuyCount + lastSellCount) > 0) reply = "Error: Active trades exist.";
       else
       {
-         for(int i=0; i<count; i++) OpenOrder(ORDER_TYPE_BUY);
-         reply = "Executing " + IntegerToString(count) + " BUY orders.";
+         int ok = 0;
+         for(int i=0; i<count; i++) if(OpenOrder(ORDER_TYPE_BUY)) ok++;
+         reply = "BUY Request: " + IntegerToString(ok) + "/" + IntegerToString(count) + " success.";
+         if(ok < count) reply += " Error: " + trade.ResultRetcodeDescription();
       }
       handled = true;
    }
    else if(StringFind(text, "SELL") != -1 || StringFind(text, "VENTE") != -1)
    {
       int count = (int)StringToInteger(StringSubstr(text, StringFind(text, " ") + 1));
-      if(count <= 0) count = Sell_Count;
+      if(count <= 0) count = (Sell_Count > 0) ? Sell_Count : 1;
 
       if(!ext_Bot_Active) reply = "Error: Bot is DISABLED.";
       else if(Only_If_No_Open_Trades && (lastBuyCount + lastSellCount) > 0) reply = "Error: Active trades exist.";
       else
       {
-         for(int i=0; i<count; i++) OpenOrder(ORDER_TYPE_SELL);
-         reply = "Executing " + IntegerToString(count) + " SELL orders.";
+         int ok = 0;
+         for(int i=0; i<count; i++) if(OpenOrder(ORDER_TYPE_SELL)) ok++;
+         reply = "SELL Request: " + IntegerToString(ok) + "/" + IntegerToString(count) + " success.";
+         if(ok < count) reply += " Error: " + trade.ResultRetcodeDescription();
       }
       handled = true;
    }
@@ -510,63 +514,37 @@ void ManageTP_SL()
 }
 
 //+------------------------------------------------------------------+
-//| Open a single order                                              |
+//| Open a single order with enhanced compatibility                  |
 //+------------------------------------------------------------------+
-void OpenOrder(ENUM_ORDER_TYPE type)
+bool OpenOrder(ENUM_ORDER_TYPE type)
 {
-   MqlTradeRequest request = {};
-   MqlTradeResult result = {};
+   MqlTick last_tick;
+   if(!SymbolInfoTick(_Symbol, last_tick)) return false;
 
    double lot = CalculateLot();
-   double price = (type == ORDER_TYPE_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double price = (type == ORDER_TYPE_BUY) ? last_tick.ask : last_tick.bid;
    int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
-   double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   double pipAdjust = (digits == 3 || digits == 5) ? 10.0 : 1.0;
 
-   request.action = TRADE_ACTION_DEAL;
-   request.symbol = _Symbol;
-   request.volume = lot;
-   request.type = type;
-   request.price = price;
-   request.deviation = 10;
-   request.comment = "GOAT TRADING";
-   request.type_filling = ORDER_FILLING_IOC;
+   trade.SetExpertMagicNumber(0);
+   trade.SetDeviationInPoints(10);
+   trade.SetTypeFillingBySymbol(_Symbol); // Auto-detect filling (IOC, FOK, etc.)
 
-   double sl = 0, tp = 0;
+   // For some brokers, we must open with 0 SL/TP first (Market Execution)
+   // trade.mqh handles this if we use its methods
+   bool success = false;
    if(type == ORDER_TYPE_BUY)
-   {
-      if(TP_SL_Mode == PRICE_LEVEL)
-      {
-         sl = ext_Global_SL_Buy;
-         tp = ext_Global_TP_Buy;
-      }
-      else
-      {
-         if(ext_Global_SL_Buy > 0) sl = price - ext_Global_SL_Buy * point * pipAdjust;
-         if(ext_Global_TP_Buy > 0) tp = price + ext_Global_TP_Buy * point * pipAdjust;
-      }
-   }
+      success = trade.Buy(lot, _Symbol, price, 0, 0, "GOAT TRADING");
    else
+      success = trade.Sell(lot, _Symbol, price, 0, 0, "GOAT TRADING");
+
+   if(!success)
    {
-      if(TP_SL_Mode == PRICE_LEVEL)
-      {
-         sl = ext_Global_SL_Sell;
-         tp = ext_Global_TP_Sell;
-      }
-      else
-      {
-         if(ext_Global_SL_Sell > 0) sl = price + ext_Global_SL_Sell * point * pipAdjust;
-         if(ext_Global_TP_Sell > 0) tp = price - ext_Global_TP_Sell * point * pipAdjust;
-      }
+      Print("Trade Error: ", trade.ResultRetcodeDescription());
+      return false;
    }
 
-   request.sl = NormalizeDouble(sl, digits);
-   request.tp = NormalizeDouble(tp, digits);
-
-   if(!OrderSend(request, result))
-      Print("OrderSend FAILED. Error: ", GetLastError());
-   else
-      Print("Trade successful. Ticket: ", result.deal);
+   // After opening, ManageTP_SL() will apply the correct targets in the next tick
+   return true;
 }
 
 //+------------------------------------------------------------------+
