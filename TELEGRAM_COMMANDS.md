@@ -21,18 +21,26 @@ Manage your exits with precision.
 ## 3. Dynamic Target Updates
 Update your TP/SL for all active and future trades in the current session.
 
-- **`TP BUY 72500`**: Updates Global Take Profit for BUYs (Price Level).
-- **`SL BUY 50 pips`**: Updates Global Stop Loss for BUYs (Pips Mode).
-- **`TP SELL 71000`**: Updates Global Take Profit for SELLs.
-- **`SL SELL 73000`**: Updates Global Stop Loss for SELLs.
+- **`TP BUY [val]`**: Updates Global Take Profit for BUYs.
+- **`SL BUY [val]`**: Updates Global Stop Loss for BUYs.
+- **`TP SELL [val]`**: Updates Global Take Profit for SELLs.
+- **`SL SELL [val]`**: Updates Global Stop Loss for SELLs.
+
+### Multi-Level TP (Scalping Mode)
+- **`MULTI TP ON`**: Activates multi-level TP management.
+- **`MULTI TP OFF`**: Deactivates multi-level TP (uses Global TP).
+- **`TP LEVEL 1 [val]`**: Sets the target price for the first level.
+- **`COUNT LEVEL 1 [num]`**: Number of trades to close at Level 1.
+- **`TP LEVEL 2 [val]`**, **`COUNT LEVEL 2 [num]`**: Configuration for Level 2.
+- **`TP LEVEL 3 [val]`**, **`COUNT LEVEL 3 [num]`**: Configuration for Level 3.
 
 ## 4. Bot Status & Safety
 - **`ON`** or **`ACTIF TRUE`**: Activates the bot logic. The Egyptian Cat will wake up.
 - **`OFF`** or **`ACTIF FALSE`**: Deactivates the bot logic AND closes all current positions immediately. The cat will go to sleep.
 
 ## 5. Market Analysis & Visuals
-- **`ANALYSE`**: Returns a technical analysis report (Trend, RSI, Price).
-- **`CAPTURE`** or **`PHOTO`**: Sends a high-quality screenshot of the current chart.
+- **`ANALYSE`**: Returns a technical analysis report (Trend, RSI, Price, Market Structure).
+- **`CAPTURE`** or **`PHOTO`**: Sends a high-quality screenshot of the current chart with drawn Trendlines and BOS/CHoCH levels.
 
 ## 6. Support & Setup
 - **`HELP`** or **`AIDE`**: Displays a summary of all commands.

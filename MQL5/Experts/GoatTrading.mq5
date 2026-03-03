@@ -50,6 +50,12 @@ input int Trades_Level2 = 0;             // Nombre de trades Niveau 2
 input double TP_Level3 = 0.0;            // TP Niveau 3
 input int Trades_Level3 = 0;             // Nombre de trades Niveau 3
 
+input group "--- Indicators & Alerts ---"
+input string Custom_Indicator_Name = "lucky-reversal"; // Nom de l'indicateur
+input int Indicator_Buy_Buffer = 0;      // Index buffer d'achat
+input int Indicator_Sell_Buffer = 1;     // Index buffer de vente
+input bool Enable_MTF_Alerts = true;     // Alertes automatiques M15-H1
+
 //--- Global Variables
 bool ordersExecuted = false;
 int lastBuyCount = 0;
@@ -57,6 +63,14 @@ int lastSellCount = 0;
 long last_telegram_update_id = 0;
 bool is_first_polling = true;
 string telegram_status = "READY";
+
+//--- Alert synchronization
+datetime last_alert_m15 = 0;
+datetime last_alert_m30 = 0;
+datetime last_alert_h1 = 0;
+int handle_m15 = INVALID_HANDLE;
+int handle_m30 = INVALID_HANDLE;
+int handle_h1 = INVALID_HANDLE;
 
 //--- Dashboard Animation
 int current_eye_state = 0;
@@ -71,6 +85,9 @@ int tailState = 0;
 
 //--- Modifiable Global States (initialized from inputs)
 bool ext_Bot_Active;
+bool ext_Use_MultiLevel_TP;
+double ext_TP_Level1, ext_TP_Level2, ext_TP_Level3;
+int ext_Trades_Level1, ext_Trades_Level2, ext_Trades_Level3;
 double ext_Global_TP_Buy, ext_Global_SL_Buy;
 double ext_Global_TP_Sell, ext_Global_SL_Sell;
 double ext_Target_Profit = 0;
@@ -191,6 +208,7 @@ string StringExtract(string source, string key, int startPos = 0)
 void ProcessTelegramCommand(string text)
 {
    StringReplace(text, "+", " "); // Decode spaces if needed
+   StringReplace(text, "LVL", "LEVEL");
    StringReplace(text, "/", "");  // Support /command format
    StringReplace(text, "_", " "); // Support BotFather menu commands (e.g. /tp_buy -> TP BUY)
    StringToUpper(text);
@@ -220,6 +238,9 @@ void ProcessTelegramCommand(string text)
               "CLOSE LOSS [val] - Target Loss\n" +
               "TP/SL BUY [val] - Set BUY TP/SL\n" +
               "TP/SL SELL [val] - Set SELL TP/SL\n" +
+              "TP LEVEL [1/2/3] [val] - Set Multi-TP levels\n" +
+              "COUNT LEVEL [1/2/3] [num] - Set trades per TP level\n" +
+              "MULTI TP [ON/OFF] - Toggle Multi-TP mode\n" +
               "ON/OFF - Toggle Bot Active\n" +
               "ANALYSE - Market Technical Analysis\n" +
               "CAPTURE - Get Chart Screenshot\n" +
@@ -242,6 +263,54 @@ void ProcessTelegramCommand(string text)
       return; // Handled separately
    }
    // Commands: TP BUY [val], TP SELL [val], SL BUY [val], SL SELL [val], CLOSE, ACTIF [true/false]
+   else if(StringFind(text, "MULTI TP ON") != -1)
+   {
+      ext_Use_MultiLevel_TP = true;
+      reply = "Multi-Level TP mode ACTIVATED.";
+      handled = true;
+   }
+   else if(StringFind(text, "MULTI TP OFF") != -1)
+   {
+      ext_Use_MultiLevel_TP = false;
+      reply = "Multi-Level TP mode DEACTIVATED. Using Global TP.";
+      handled = true;
+   }
+   else if(StringFind(text, "TP LEVEL 1") != -1)
+   {
+      ext_TP_Level1 = StringToDouble(StringSubstr(text, StringFind(text, "LEVEL 1") + 8));
+      reply = "Take Profit Level 1 updated to " + DoubleToString(ext_TP_Level1, 5);
+      handled = true;
+   }
+   else if(StringFind(text, "TP LEVEL 2") != -1)
+   {
+      ext_TP_Level2 = StringToDouble(StringSubstr(text, StringFind(text, "LEVEL 2") + 8));
+      reply = "Take Profit Level 2 updated to " + DoubleToString(ext_TP_Level2, 5);
+      handled = true;
+   }
+   else if(StringFind(text, "TP LEVEL 3") != -1)
+   {
+      ext_TP_Level3 = StringToDouble(StringSubstr(text, StringFind(text, "LEVEL 3") + 8));
+      reply = "Take Profit Level 3 updated to " + DoubleToString(ext_TP_Level3, 5);
+      handled = true;
+   }
+   else if(StringFind(text, "COUNT LEVEL 1") != -1)
+   {
+      ext_Trades_Level1 = (int)StringToInteger(StringSubstr(text, StringFind(text, "LEVEL 1") + 8));
+      reply = "Trade Count for Level 1 updated to " + IntegerToString(ext_Trades_Level1);
+      handled = true;
+   }
+   else if(StringFind(text, "COUNT LEVEL 2") != -1)
+   {
+      ext_Trades_Level2 = (int)StringToInteger(StringSubstr(text, StringFind(text, "LEVEL 2") + 9));
+      reply = "Trade Count for Level 2 updated to " + IntegerToString(ext_Trades_Level2);
+      handled = true;
+   }
+   else if(StringFind(text, "COUNT LEVEL 3") != -1)
+   {
+      ext_Trades_Level3 = (int)StringToInteger(StringSubstr(text, StringFind(text, "LEVEL 3") + 9));
+      reply = "Trade Count for Level 3 updated to " + IntegerToString(ext_Trades_Level3);
+      handled = true;
+   }
    else if(StringFind(text, "TP BUY") != -1)
    {
       ext_Global_TP_Buy = StringToDouble(StringSubstr(text, StringFind(text, "BUY") + 4));
@@ -348,10 +417,13 @@ void ProcessTelegramCommand(string text)
 }
 
 //+------------------------------------------------------------------+
-//| Get a market analysis summary based on RSI and Moving Averages   |
+//| Enhanced Market Analysis with Structure and Courteous Tone       |
 //+------------------------------------------------------------------+
 string GetMarketAnalysis()
 {
+   // Greetings
+   string greeting = "Bonjour Monsieur. C'est un plaisir de vous servir. Voici mon analyse détaillée pour " + _Symbol + " :\n\n";
+
    double rsi[], ma50[], ma200[];
    int rsiHandle = iRSI(_Symbol, _Period, 14, PRICE_CLOSE);
    int ma50Handle = iMA(_Symbol, _Period, 50, 0, MODE_SMA, PRICE_CLOSE);
@@ -361,30 +433,96 @@ string GetMarketAnalysis()
       CopyBuffer(ma50Handle, 0, 0, 1, ma50) <= 0 ||
       CopyBuffer(ma200Handle, 0, 0, 1, ma200) <= 0)
    {
-      IndicatorRelease(rsiHandle);
-      IndicatorRelease(ma50Handle);
-      IndicatorRelease(ma200Handle);
-      return "Analysis Error: Indicators not ready.";
+      IndicatorRelease(rsiHandle); IndicatorRelease(ma50Handle); IndicatorRelease(ma200Handle);
+      return "Pardonnez-moi Monsieur, mais mes indicateurs ne sont pas encore prêts. Veuillez patienter un instant.";
    }
 
-   IndicatorRelease(rsiHandle);
-   IndicatorRelease(ma50Handle);
-   IndicatorRelease(ma200Handle);
+   IndicatorRelease(rsiHandle); IndicatorRelease(ma50Handle); IndicatorRelease(ma200Handle);
+
+   //--- Market Structure (Fractals Based)
+   double fractHigh[], fractLow[];
+   datetime times[];
+   int fractHandle = iFractals(_Symbol, _Period);
+   CopyBuffer(fractHandle, 0, 0, 100, fractHigh);
+   CopyBuffer(fractHandle, 1, 0, 100, fractLow);
+   CopyTime(_Symbol, _Period, 0, 100, times);
+   IndicatorRelease(fractHandle);
+
+   double lastH = 0, lastL = 0, prevH = 0, prevL = 0;
+   datetime lastHTime = 0, lastLTime = 0, prevHTime = 0, prevLTime = 0;
+
+   for(int i=2; i<100; i++) {
+      if(fractHigh[i] != 0 && fractHigh[i] != EMPTY_VALUE) {
+         if(lastH == 0) { lastH = fractHigh[i]; lastHTime = times[i]; }
+         else if(prevH == 0) { prevH = fractHigh[i]; prevHTime = times[i]; }
+      }
+      if(fractLow[i] != 0 && fractLow[i] != EMPTY_VALUE) {
+         if(lastL == 0) { lastL = fractLow[i]; lastLTime = times[i]; }
+         else if(prevL == 0) { prevL = fractLow[i]; prevLTime = times[i]; }
+      }
+      if(lastH != 0 && prevH != 0 && lastL != 0 && prevL != 0) break;
+   }
 
    double price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   string trend = (ma50[0] > ma200[0]) ? "HAUSSIÈRE (MA50 > MA200)" : "BAISSIÈRE (MA50 < MA200)";
-   string rsiText = "RSI(14): " + DoubleToString(rsi[0], 2);
+   string structure = "NEUTRE";
+   if(price > lastH) structure = "BOS HAUSSIER (Break of Structure)";
+   else if(price < lastL) structure = "BOS BAISSIER (Break of Structure)";
+   else if(lastH < prevH && lastL < prevL) structure = "TENDANCE BAISSIÈRE ÉTABLIE";
+   else if(lastH > prevH && lastL > prevL) structure = "TENDANCE HAUSSIÈRE ÉTABLIE";
 
+   //--- M30 Strong Movement Detection
+   double m30High[], m30Low[];
+   CopyHigh(_Symbol, PERIOD_M30, 0, 5, m30High);
+   CopyLow(_Symbol, PERIOD_M30, 0, 5, m30Low);
+   double avgRange = 0;
+   for(int i=0; i<5; i++) avgRange += (m30High[i] - m30Low[i]);
+   avgRange /= 5;
+
+   double currentM30Range = (m30High[0] - m30Low[0]);
+   string movement = "STABLE";
+   if(currentM30Range > avgRange * 1.8) movement = "FORT MOUVEMENT DÉTECTÉ";
+
+   //--- Final Trend Synthesis
+   string finalTrend = (ma50[0] > ma200[0] && price > lastL) ? "HAUSSIÈRE" : "BAISSIÈRE";
+   if(ma50[0] < ma200[0] && price < lastH) finalTrend = "BAISSIÈRE";
+
+   string rsiText = DoubleToString(rsi[0], 1);
    if(rsi[0] > 70) rsiText += " (SURACHETÉ)";
    else if(rsi[0] < 30) rsiText += " (SURVENDU)";
-   else rsiText += " (NEUTRE)";
 
-   string analysis = "=== ANALYSE GOAT TRADING ===\n" +
-                     "Symbole: " + _Symbol + " (" + EnumToString(_Period) + ")\n" +
-                     "Prix actuel: " + DoubleToString(price, _Digits) + "\n" +
-                     "Tendance: " + trend + "\n" +
-                     rsiText + "\n" +
-                     "Positions ouvertes: " + IntegerToString(lastBuyCount + lastSellCount);
+   string analysis = greeting +
+                     "📈 STRUCTURE : " + structure + "\n" +
+                     "📊 TENDANCE GÉNÉRALE : " + finalTrend + "\n" +
+                     "⚡ MOUVEMENT M30 : " + movement + "\n" +
+                     "🕒 RSI(14) : " + rsiText + "\n" +
+                     "📉 TRENDLINE : " + (finalTrend == "HAUSSIÈRE" ? "Support ascendant" : "Résistance descendante") + " dessiné sur votre graphique.\n\n" +
+                     "J'espère que cela vous aidera dans vos décisions, Monsieur. Je reste à votre entière disposition.";
+
+   //--- Physical Drawing on Chart
+   ObjectsDeleteAll(0, "GOAT_STRUCT_");
+   if(lastH > 0) {
+      ObjectCreate(0, "GOAT_STRUCT_H", OBJ_HLINE, 0, 0, lastH);
+      ObjectSetInteger(0, "GOAT_STRUCT_H", OBJPROP_COLOR, clrRed);
+      ObjectSetInteger(0, "GOAT_STRUCT_H", OBJPROP_STYLE, STYLE_DOT);
+   }
+   if(lastL > 0) {
+      ObjectCreate(0, "GOAT_STRUCT_L", OBJ_HLINE, 0, 0, lastL);
+      ObjectSetInteger(0, "GOAT_STRUCT_L", OBJPROP_COLOR, clrLime);
+      ObjectSetInteger(0, "GOAT_STRUCT_L", OBJPROP_STYLE, STYLE_DOT);
+   }
+
+   // Trendline based on actual fractal times
+   if(lastH > 0 && prevH > 0 && lastL > 0 && prevL > 0) {
+      datetime t1 = (finalTrend == "HAUSSIÈRE") ? prevLTime : prevHTime;
+      double p1 = (finalTrend == "HAUSSIÈRE") ? prevL : prevH;
+      datetime t2 = (finalTrend == "HAUSSIÈRE") ? lastLTime : lastHTime;
+      double p2 = (finalTrend == "HAUSSIÈRE") ? lastL : lastH;
+
+      ObjectCreate(0, "GOAT_STRUCT_TL", OBJ_TREND, 0, t1, p1, t2, p2);
+      ObjectSetInteger(0, "GOAT_STRUCT_TL", OBJPROP_COLOR, clrGold);
+      ObjectSetInteger(0, "GOAT_STRUCT_TL", OBJPROP_WIDTH, 2);
+      ObjectSetInteger(0, "GOAT_STRUCT_TL", OBJPROP_RAY_RIGHT, true);
+   }
 
    return analysis;
 }
@@ -577,14 +715,14 @@ void ManageTP_SL()
             buyCount++;
             newSL = (TP_SL_Mode == PRICE_LEVEL) ? ext_Global_SL_Buy : (ext_Global_SL_Buy > 0 ? openPrice - ext_Global_SL_Buy * point * pipAdjust : 0);
 
-            if(Use_MultiLevel_TP)
+            if(ext_Use_MultiLevel_TP)
             {
-               if(buyCount <= Trades_Level1 && Trades_Level1 > 0)
-                  newTP = (TP_SL_Mode == PRICE_LEVEL) ? TP_Level1 : (TP_Level1 > 0 ? openPrice + TP_Level1 * point * pipAdjust : 0);
-               else if(buyCount <= (Trades_Level1 + Trades_Level2) && Trades_Level2 > 0)
-                  newTP = (TP_SL_Mode == PRICE_LEVEL) ? TP_Level2 : (TP_Level2 > 0 ? openPrice + TP_Level2 * point * pipAdjust : 0);
-               else if(buyCount <= (Trades_Level1 + Trades_Level2 + Trades_Level3) && Trades_Level3 > 0)
-                  newTP = (TP_SL_Mode == PRICE_LEVEL) ? TP_Level3 : (TP_Level3 > 0 ? openPrice + TP_Level3 * point * pipAdjust : 0);
+               if(buyCount <= ext_Trades_Level1 && ext_Trades_Level1 > 0)
+                  newTP = (TP_SL_Mode == PRICE_LEVEL) ? ext_TP_Level1 : (ext_TP_Level1 > 0 ? openPrice + ext_TP_Level1 * point * pipAdjust : 0);
+               else if(buyCount <= (ext_Trades_Level1 + ext_Trades_Level2) && ext_Trades_Level2 > 0)
+                  newTP = (TP_SL_Mode == PRICE_LEVEL) ? ext_TP_Level2 : (ext_TP_Level2 > 0 ? openPrice + ext_TP_Level2 * point * pipAdjust : 0);
+               else if(buyCount <= (ext_Trades_Level1 + ext_Trades_Level2 + ext_Trades_Level3) && ext_Trades_Level3 > 0)
+                  newTP = (TP_SL_Mode == PRICE_LEVEL) ? ext_TP_Level3 : (ext_TP_Level3 > 0 ? openPrice + ext_TP_Level3 * point * pipAdjust : 0);
                else
                   newTP = (TP_SL_Mode == PRICE_LEVEL) ? ext_Global_TP_Buy : (ext_Global_TP_Buy > 0 ? openPrice + ext_Global_TP_Buy * point * pipAdjust : 0);
             }
@@ -598,14 +736,14 @@ void ManageTP_SL()
             sellCount++;
             newSL = (TP_SL_Mode == PRICE_LEVEL) ? ext_Global_SL_Sell : (ext_Global_SL_Sell > 0 ? openPrice + ext_Global_SL_Sell * point * pipAdjust : 0);
 
-            if(Use_MultiLevel_TP)
+            if(ext_Use_MultiLevel_TP)
             {
-               if(sellCount <= Trades_Level1 && Trades_Level1 > 0)
-                  newTP = (TP_SL_Mode == PRICE_LEVEL) ? TP_Level1 : (TP_Level1 > 0 ? openPrice - TP_Level1 * point * pipAdjust : 0);
-               else if(sellCount <= (Trades_Level1 + Trades_Level2) && Trades_Level2 > 0)
-                  newTP = (TP_SL_Mode == PRICE_LEVEL) ? TP_Level2 : (TP_Level2 > 0 ? openPrice - TP_Level2 * point * pipAdjust : 0);
-               else if(sellCount <= (Trades_Level1 + Trades_Level2 + Trades_Level3) && Trades_Level3 > 0)
-                  newTP = (TP_SL_Mode == PRICE_LEVEL) ? TP_Level3 : (TP_Level3 > 0 ? openPrice - TP_Level3 * point * pipAdjust : 0);
+               if(sellCount <= ext_Trades_Level1 && ext_Trades_Level1 > 0)
+                  newTP = (TP_SL_Mode == PRICE_LEVEL) ? ext_TP_Level1 : (ext_TP_Level1 > 0 ? openPrice - ext_TP_Level1 * point * pipAdjust : 0);
+               else if(sellCount <= (ext_Trades_Level1 + ext_Trades_Level2) && ext_Trades_Level2 > 0)
+                  newTP = (TP_SL_Mode == PRICE_LEVEL) ? ext_TP_Level2 : (ext_TP_Level2 > 0 ? openPrice - ext_TP_Level2 * point * pipAdjust : 0);
+               else if(sellCount <= (ext_Trades_Level1 + ext_Trades_Level2 + ext_Trades_Level3) && ext_Trades_Level3 > 0)
+                  newTP = (TP_SL_Mode == PRICE_LEVEL) ? ext_TP_Level3 : (ext_TP_Level3 > 0 ? openPrice - ext_TP_Level3 * point * pipAdjust : 0);
                else
                   newTP = (TP_SL_Mode == PRICE_LEVEL) ? ext_Global_TP_Sell : (ext_Global_TP_Sell > 0 ? openPrice - ext_Global_TP_Sell * point * pipAdjust : 0);
             }
@@ -814,8 +952,17 @@ void CleanupUI()
 //+------------------------------------------------------------------+
 int OnInit()
 {
+   // Initialize Indicator Handles
+   handle_m15 = iCustom(_Symbol, PERIOD_M15, Custom_Indicator_Name);
+   handle_m30 = iCustom(_Symbol, PERIOD_M30, Custom_Indicator_Name);
+   handle_h1 = iCustom(_Symbol, PERIOD_H1, Custom_Indicator_Name);
+
    // Initialize modifiable globals from inputs
    ext_Bot_Active = Bot_Active;
+   ext_Use_MultiLevel_TP = Use_MultiLevel_TP;
+   ext_TP_Level1 = TP_Level1; ext_Trades_Level1 = Trades_Level1;
+   ext_TP_Level2 = TP_Level2; ext_Trades_Level2 = Trades_Level2;
+   ext_TP_Level3 = TP_Level3; ext_Trades_Level3 = Trades_Level3;
    ext_Global_TP_Buy = Global_TP_Buy;
    ext_Global_SL_Buy = Global_SL_Buy;
    ext_Global_TP_Sell = Global_TP_Sell;
@@ -834,6 +981,53 @@ void OnDeinit(const int reason)
 {
    EventKillTimer();
    CleanupUI();
+   IndicatorRelease(handle_m15);
+   IndicatorRelease(handle_m30);
+   IndicatorRelease(handle_h1);
+}
+
+//+------------------------------------------------------------------+
+//| Check for automatic signals from lucky-reversal across timeframes|
+//+------------------------------------------------------------------+
+void CheckMTFAlerts()
+{
+   if(!Enable_MTF_Alerts) return;
+
+   ENUM_TIMEFRAMES periods[] = {PERIOD_M15, PERIOD_M30, PERIOD_H1};
+   datetime *last_alerts[] = {&last_alert_m15, &last_alert_m30, &last_alert_h1};
+   int handles[] = {handle_m15, handle_m30, handle_h1};
+
+   for(int i=0; i<3; i++)
+   {
+      if(handles[i] == INVALID_HANDLE) continue;
+
+      double buy[], sell[];
+      if(CopyBuffer(handles[i], Indicator_Buy_Buffer, 1, 1, buy) > 0 && buy[0] != 0 && buy[0] != EMPTY_VALUE)
+      {
+         datetime barTime = (datetime)SeriesInfoInteger(_Symbol, periods[i], SERIES_LASTBAR_DATE);
+         if(barTime > *last_alerts[i])
+         {
+            *last_alerts[i] = barTime;
+            string msg = "🚨 SIGNAL D'ACHAT DÉTECTÉ (" + EnumToString(periods[i]) + ")\n" +
+                         "Indicateur: " + Custom_Indicator_Name + "\n" +
+                         "Bonjour Monsieur, une opportunité se présente sur " + _Symbol + ".";
+            SendTelegramMessage(msg);
+         }
+      }
+
+      if(CopyBuffer(handles[i], Indicator_Sell_Buffer, 1, 1, sell) > 0 && sell[0] != 0 && sell[0] != EMPTY_VALUE)
+      {
+         datetime barTime = (datetime)SeriesInfoInteger(_Symbol, periods[i], SERIES_LASTBAR_DATE);
+         if(barTime > *last_alerts[i])
+         {
+            *last_alerts[i] = barTime;
+            string msg = "🚨 SIGNAL DE VENTE DÉTECTÉ (" + EnumToString(periods[i]) + ")\n" +
+                         "Indicateur: " + Custom_Indicator_Name + "\n" +
+                         "Bonjour Monsieur, le marché semble vouloir descendre sur " + _Symbol + ".";
+            SendTelegramMessage(msg);
+         }
+      }
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -842,6 +1036,7 @@ void OnDeinit(const int reason)
 void OnTimer()
 {
    FetchTelegramUpdates();
+   CheckMTFAlerts();
    UpdateDashboard();
 }
 
