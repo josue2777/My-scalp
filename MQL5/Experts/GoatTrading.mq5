@@ -55,6 +55,8 @@ bool ordersExecuted = false;
 int lastBuyCount = 0;
 int lastSellCount = 0;
 long last_telegram_update_id = 0;
+bool is_first_polling = true;
+string telegram_status = "READY";
 
 //--- Dashboard Animation
 int current_eye_state = 0;
@@ -109,52 +111,75 @@ void FetchTelegramUpdates()
 
    if(res == 200)
    {
+      telegram_status = "CONNECTED";
       string response = CharArrayToString(result);
 
-      // Look for multiple messages in response
-      int msgPos = StringFind(response, "\"text\"");
-      while(msgPos != -1)
+      // Look for multiple messages in response by searching for "update_id"
+      int updatePos = StringFind(response, "\"update_id\"");
+      while(updatePos != -1)
       {
-         string updateIdStr = StringExtract(response, "\"update_id\"");
-         if(updateIdStr != "") last_telegram_update_id = StringToInteger(updateIdStr);
+         string updateIdStr = StringExtract(response, "\"update_id\"", updatePos);
+         if(updateIdStr != "")
+         {
+            last_telegram_update_id = StringToInteger(updateIdStr);
 
-         string text = StringExtract(response, "\"text\"");
-         if(text != "") ProcessTelegramCommand(text);
+            // Extract the text for this specific update_id block
+            string text = StringExtract(response, "\"text\"", updatePos);
 
-         // Move to next message if any (simplified)
-         response = StringSubstr(response, msgPos + 6);
-         msgPos = StringFind(response, "\"text\"");
+            if(!is_first_polling)
+            {
+               if(text != "") ProcessTelegramCommand(text);
+            }
+         }
+
+         // Search for the next "update_id" starting after the current one
+         updatePos = StringFind(response, "\"update_id\"", updatePos + 10);
+      }
+      is_first_polling = false;
+   }
+   else
+   {
+      telegram_status = "ERR " + IntegerToString(res);
+      if(res == -1)
+      {
+         int err = GetLastError();
+         Print("Telegram WebRequest Error: ", err);
+         if(err == 4014) telegram_status = "ERR: URL NOT ALLOWED";
       }
    }
 }
 
 //+------------------------------------------------------------------+
-//| Simple string parsing helper                                     |
+//| Simple string parsing helper with start position                 |
 //+------------------------------------------------------------------+
-string StringExtract(string source, string key)
+string StringExtract(string source, string key, int startPos = 0)
 {
-   int pos = StringFind(source, key);
+   int pos = StringFind(source, key, startPos);
    if(pos == -1) return "";
 
    int start = pos + StringLen(key);
-   // Skip colon and quotes
+   // Skip colon, spaces and quotes
    while(start < StringLen(source) && (StringSubstr(source, start, 1) == ":" || StringSubstr(source, start, 1) == " " || StringSubstr(source, start, 1) == "\""))
       start++;
 
    int end = start;
-   // If it's a string value, find closing quote
-   if(StringFind(source, "\"", pos + StringLen(key)) != -1 && StringFind(source, "\"", pos + StringLen(key)) < StringFind(source, ",", pos + StringLen(key)))
+   // If it's a string value (surrounded by quotes), find closing quote
+   // We look for the first quote after the key within a reasonable distance
+   int firstQuote = StringFind(source, "\"", pos + StringLen(key));
+   int firstComma = StringFind(source, ",", pos + StringLen(key));
+
+   if(firstQuote != -1 && (firstComma == -1 || firstQuote < firstComma))
    {
       end = StringFind(source, "\"", start);
    }
-   else // numeric value
+   else // numeric value or unquoted
    {
       end = StringFind(source, ",", start);
       int endBracket = StringFind(source, "}", start);
       if(end == -1 || (endBracket != -1 && endBracket < end)) end = endBracket;
    }
 
-   if(end == -1) return "";
+   if(end == -1) end = StringLen(source);
 
    string val = StringSubstr(source, start, end - start);
    return val;
@@ -633,17 +658,20 @@ void UpdateDashboard()
    for(int i=0; i<11; i++)
       CreateLabel("CatLine"+IntegerToString(i), c[i], xCat, yCat + i*cSpacing, catColor, CORNER_LEFT_UPPER, 11, ANCHOR_LEFT_UPPER);
 
-   //--- Draw Info (Right Upper Corner) - Large scale
+   //--- Draw Info (Right Upper Corner) - Scaled down
    int xInfo = 20;
    int yInfo = 20;
-   int spacing = 38;
-   CreateLabel("Title", "== GOAT TRADING ==", xInfo, yInfo, clrAqua, CORNER_RIGHT_UPPER, 26, ANCHOR_RIGHT_UPPER);
-   CreateLabel("Status", "STATUS: " + statusText, xInfo, yInfo + spacing, statusColor, CORNER_RIGHT_UPPER, 22, ANCHOR_RIGHT_UPPER);
-   CreateLabel("Balance", "Balance: " + DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2), xInfo, yInfo + spacing*2, textColor, CORNER_RIGHT_UPPER, 20, ANCHOR_RIGHT_UPPER);
-   CreateLabel("Equity", "Equity:  " + DoubleToString(AccountInfoDouble(ACCOUNT_EQUITY), 2), xInfo, yInfo + spacing*3, textColor, CORNER_RIGHT_UPPER, 20, ANCHOR_RIGHT_UPPER);
-   CreateLabel("Profit", "Profit:  " + DoubleToString(AccountInfoDouble(ACCOUNT_PROFIT), 2), xInfo, yInfo + spacing*4, (AccountInfoDouble(ACCOUNT_PROFIT)>=0?clrLime:clrRed), CORNER_RIGHT_UPPER, 20, ANCHOR_RIGHT_UPPER);
-   CreateLabel("Trades", "BUY["+IntegerToString(totalBuy)+"] SELL["+IntegerToString(totalSell)+"]", xInfo, yInfo + spacing*5, textColor, CORNER_RIGHT_UPPER, 20, ANCHOR_RIGHT_UPPER);
-   CreateLabel("Lotting", "Lotting: " + ((LotMode==FIXED_LOT)?"FIXED":"AUTO"), xInfo, yInfo + spacing*6, textColor, CORNER_RIGHT_UPPER, 18, ANCHOR_RIGHT_UPPER);
+   int spacing = 24;
+   CreateLabel("Title", "== GOAT TRADING ==", xInfo, yInfo, clrAqua, CORNER_RIGHT_UPPER, 18, ANCHOR_RIGHT_UPPER);
+   CreateLabel("Status", "STATUS: " + statusText, xInfo, yInfo + spacing, statusColor, CORNER_RIGHT_UPPER, 14, ANCHOR_RIGHT_UPPER);
+   CreateLabel("Balance", "Balance: " + DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2), xInfo, yInfo + spacing*2, textColor, CORNER_RIGHT_UPPER, 12, ANCHOR_RIGHT_UPPER);
+   CreateLabel("Equity", "Equity:  " + DoubleToString(AccountInfoDouble(ACCOUNT_EQUITY), 2), xInfo, yInfo + spacing*3, textColor, CORNER_RIGHT_UPPER, 12, ANCHOR_RIGHT_UPPER);
+   CreateLabel("Profit", "Profit:  " + DoubleToString(AccountInfoDouble(ACCOUNT_PROFIT), 2), xInfo, yInfo + spacing*4, (AccountInfoDouble(ACCOUNT_PROFIT)>=0?clrLime:clrRed), CORNER_RIGHT_UPPER, 12, ANCHOR_RIGHT_UPPER);
+   CreateLabel("Trades", "BUY["+IntegerToString(totalBuy)+"] SELL["+IntegerToString(totalSell)+"]", xInfo, yInfo + spacing*5, textColor, CORNER_RIGHT_UPPER, 12, ANCHOR_RIGHT_UPPER);
+   CreateLabel("Lotting", "Lotting: " + ((LotMode==FIXED_LOT)?"FIXED":"AUTO"), xInfo, yInfo + spacing*6, textColor, CORNER_RIGHT_UPPER, 12, ANCHOR_RIGHT_UPPER);
+
+   color telColor = (telegram_status == "CONNECTED") ? clrDeepSkyBlue : clrOrangeRed;
+   CreateLabel("Telegram", "TELEGRAM: " + telegram_status, xInfo, yInfo + spacing*7, telColor, CORNER_RIGHT_UPPER, 12, ANCHOR_RIGHT_UPPER);
 
    ChartRedraw();
 }
