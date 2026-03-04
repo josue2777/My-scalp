@@ -231,18 +231,28 @@ void CloseAllPositions()
 double CalculateLot()
 {
    if(LotMode == FIXED_LOT) return Fixed_Lot;
-   double b = AccountInfoDouble(ACCOUNT_BALANCE);
-   double l = 0.01;
-   if(b > 1000 && b <= 5000) l = 0.03;
-   else if(b > 5000 && b <= 13000) l = 0.05;
-   else if(b > 13000 && b <= 50000) l = 0.10;
-   else if(b > 50000 && b <= 150000) l = 0.50;
-   else if(b > 150000 && b <= 350000) l = 1.00;
-   else if(b > 350000) l = 3.00;
-   double stp = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
-   l = MathFloor(l / stp) * stp;
-   double minL = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
-   return (l < minL) ? minL : l;
+   double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   double lot = 0.01;
+
+   if(balance >= 2 && balance <= 1000) lot = 0.01;
+   else if(balance > 1000 && balance <= 5000) lot = 0.1;
+   else if(balance > 5000 && balance <= 13000) lot = 0.2;
+   else if(balance > 13000 && balance <= 50000) lot = 0.3;
+   else if(balance > 50000 && balance <= 150000) lot = 0.50;
+   else if(balance > 150000 && balance <= 350000) lot = 1.00;
+   else if(balance > 350000 && balance <= 750000) lot = 3.00;
+   else if(balance > 750000) lot = 3.00;
+
+   // Respect broker constraints
+   double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   lot = MathFloor(lot / lotStep) * lotStep;
+   double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+
+   if(lot < minLot) lot = minLot;
+   if(lot > maxLot) lot = maxLot;
+
+   return lot;
 }
 
 //+------------------------------------------------------------------+
