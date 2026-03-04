@@ -41,6 +41,12 @@ input double Global_SL_Buy = 0.0;
 input double Global_TP_Sell = 0.0;
 input double Global_SL_Sell = 0.0;
 
+input group "--- Scalping de Conservation ---"
+input bool Use_Trailing = true;          // Enable Trailing Stop
+input int Trailing_Start = 50;           // Trailing Start (Points)
+input int Trailing_Stop = 30;            // Trailing distance (Points)
+input int Trailing_Step = 10;            // Trailing step (Points)
+
 input group "--- Precision Trend Settings ---"
 input int Primary_MA_Period = 20;        // Primary MA Period
 input MA_Type Primary_MA_Algo = SMA;     // Primary MA Type
@@ -305,7 +311,7 @@ double CalculateLot()
    else if(balance > 50000 && balance <= 150000) lot = 0.50;
    else if(balance > 150000 && balance <= 350000) lot = 1.00;
    else if(balance > 350000 && balance <= 750000) lot = 3.00;
-   else if(balance > 750000) lot = 3.00;
+   else if(balance > 750000) lot = (balance / 750000.0) * 3.0; // Proportional scaling for large capital
 
    // Respect broker constraints
    double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
@@ -436,6 +442,7 @@ void OnTick()
 {
    if(!ext_Bot_Active) { if(PositionsTotal() > 0) CloseAllPositions(); return; }
    CheckTargets();
+   if(Use_Trailing) ApplyTrailingStop();
 
    int signal = GetPrecisionSignal();
 
@@ -467,6 +474,41 @@ void OnTick()
    }
 }
 
+void ApplyTrailingStop()
+{
+   double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong t = PositionGetTicket(i);
+      if(PositionSelectByTicket(t) && PositionGetString(POSITION_SYMBOL) == _Symbol)
+      {
+         double curSL = PositionGetDouble(POSITION_SL);
+         double openP = PositionGetDouble(POSITION_PRICE_OPEN);
+         double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+         double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+
+         if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
+         {
+            if(bid - openP > Trailing_Start * point)
+            {
+               double newSL = NormalizeDouble(bid - Trailing_Stop * point, (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS));
+               if(newSL > curSL + Trailing_Step * point || curSL == 0)
+                  trade.PositionModify(t, newSL, PositionGetDouble(POSITION_TP));
+            }
+         }
+         else
+         {
+            if(openP - ask > Trailing_Start * point)
+            {
+               double newSL = NormalizeDouble(ask + Trailing_Stop * point, (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS));
+               if(newSL < curSL - Trailing_Step * point || curSL == 0)
+                  trade.PositionModify(t, newSL, PositionGetDouble(POSITION_TP));
+            }
+         }
+      }
+   }
+}
+
 int PositionCount(ENUM_POSITION_TYPE type)
 {
    int count = 0;
@@ -492,37 +534,37 @@ void UpdateDashboard()
 
    // Artistic Data Table
    CreateLabel("Box", "╔══════════════════════════════════╗", x, y, headClr, CORNER_RIGHT_UPPER, 10);
-   CreateLabel("Title", "║   PRECISION ARTISTIC TERMINAL    ║", x, y+h, headClr, CORNER_RIGHT_UPPER, 10);
+   CreateLabel("Title", "║   P R E S T I G E   T E R M I N A L  ║", x, y+h, headClr, CORNER_RIGHT_UPPER, 10);
    CreateLabel("Sep1", "╠══════════════════════════════════╣", x, y+h*2, headClr, CORNER_RIGHT_UPPER, 10);
 
    int row = y + h*3;
-   DrawArtRow("SYMBOL    ", _Symbol, x+15, row, textClr); row+=h;
-   DrawArtRow("BALANCE   ", DoubleToString(balance, 2), x+15, row, textClr); row+=h;
+   DrawArtRow("ASSET     ", _Symbol, x+15, row, textClr); row+=h;
+   DrawArtRow("CAPITAL   ", DoubleToString(balance, 2), x+15, row, textClr); row+=h;
    DrawArtRow("EQUITY    ", DoubleToString(equity, 2), x+15, row, textClr); row+=h;
-   DrawArtRow("NET PROFIT", DoubleToString(profit, 2), x+15, row, (profit>=0?clrLime:clrRed)); row+=h;
-   DrawArtRow("SPREAD    ", DoubleToString(spread, (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS)), x+15, row, clrSkyBlue); row+=h;
-   DrawArtRow("PEARSON R ", DoubleToString(lr.pearsonR, 4), x+15, row, headClr); row+=h;
-   DrawArtRow("TRADES B/S", IntegerToString(b)+" / "+IntegerToString(s), x+15, row, textClr); row+=h;
+   DrawArtRow("P/L LIVE  ", DoubleToString(profit, 2), x+15, row, (profit>=0?clrLime:clrRed)); row+=h;
+   DrawArtRow("CORREL. R ", DoubleToString(lr.pearsonR, 4), x+15, row, headClr); row+=h;
+   DrawArtRow("ACTIVE B/S", IntegerToString(b)+" / "+IntegerToString(s), x+15, row, textClr); row+=h;
 
    CreateLabel("Box_End", "╚══════════════════════════════════╝", x, row, headClr, CORNER_RIGHT_UPPER, 10);
 
-   //--- Rose Animation Logic (pas lentement = 250ms interval)
+   //--- Rose Animation Logic (pas lentement = 200ms interval)
    long now = GetTickCount();
-   if(now - lastRoseUpdate >= 250)
+   if(now - lastRoseUpdate >= 200)
    {
       lastRoseUpdate = now;
       if(total > 0 && roseFrame < ArraySize(roseFrames)-1) roseFrame++;
       if(total == 0 && roseFrame > 0) roseFrame--;
    }
 
-   color roseColor = (total > 0) ? clrCrimson : clrDimGray;
+   color roseColor = (total > 0) ? clrCrimson : clrSlateGray;
    string roseText = roseFrames[roseFrame];
 
-   // Draw Artistic Rose
-   CreateLabel("Rose_F", roseText, 40, 300, roseColor, CORNER_LEFT_UPPER, 40);
-   CreateLabel("Rose_S", "  |  ", 55, 360, clrForestGreen, CORNER_LEFT_UPPER, 25);
-   CreateLabel("Rose_L", " /|\\ ", 55, 385, clrForestGreen, CORNER_LEFT_UPPER, 20);
-   CreateLabel("Rose_M", (total > 0 ? "LIFE" : "STILL"), 55, 430, roseColor, CORNER_LEFT_UPPER, 10);
+   // Draw Majestic Rose
+   CreateLabel("Rose_F", roseText, 40, 300, roseColor, CORNER_LEFT_UPPER, 45);
+   CreateLabel("Rose_S", "  |  ", 55, 365, clrForestGreen, CORNER_LEFT_UPPER, 25);
+   CreateLabel("Rose_L1", " /|\\ ", 55, 390, clrForestGreen, CORNER_LEFT_UPPER, 20);
+   CreateLabel("Rose_L2", "  |  ", 55, 415, clrForestGreen, CORNER_LEFT_UPPER, 20);
+   CreateLabel("Rose_M", (total > 0 ? "V I T A L I T Y" : "S I L E N C E"), 40, 460, roseColor, CORNER_LEFT_UPPER, 10);
 
    ChartRedraw();
 }
