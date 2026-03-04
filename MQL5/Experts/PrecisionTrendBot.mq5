@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2024, GOAT TRADING"
 #property link      "https://www.mql5.com"
-#property version   "1.10"
+#property version   "1.20"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -59,6 +59,27 @@ bool is_first_polling = true;
 string telegram_status = "READY";
 datetime last_signal_time = 0;
 string UI_PREFIX = "PTB_UI_";
+
+//--- Rose Animation Variables
+int roseFrame = 0;
+long lastRoseUpdate = 0;
+string roseFrames[] = {
+   "  .  ",
+   " ( ) ",
+   " { } ",
+   "(@_@)",
+   "{{@}}",
+   " (V) "
+};
+
+//--- Linear Regression Variables
+struct LR_Result {
+   double slope;
+   double average;
+   double intercept;
+   double stdDev;
+   double pearsonR;
+};
 
 //--- Indicator handles
 int handle_ema200 = INVALID_HANDLE;
@@ -158,17 +179,17 @@ double iTEMA_Iterative(const double &src[], int p, int s)
    return 3.0 * (e1[s] - e2[s]) + e3[s];
 }
 
-void iT3_GD_Array(const double &input[], double &output[], int p, double factor)
+void iT3_GD_Array(const double &in_data[], double &out_data[], int p, double factor)
 {
    double alpha = 2.0 / (p + 1.0);
-   int n = ArraySize(input);
+   int n = ArraySize(in_data);
    double e1[]; ArrayResize(e1, n);
-   double last = input[n-1];
-   for(int i=n-1; i>=0; i--) { e1[i] = alpha * input[i] + (1.0 - alpha) * last; last = e1[i]; }
+   double last = in_data[n-1];
+   for(int i=n-1; i>=0; i--) { e1[i] = alpha * in_data[i] + (1.0 - alpha) * last; last = e1[i]; }
    last = e1[n-1];
    for(int i=n-1; i>=0; i--) {
       double e2 = alpha * e1[i] + (1.0 - alpha) * last;
-      output[i] = e1[i] * (1.0 + factor) - e2 * factor;
+      out_data[i] = e1[i] * (1.0 + factor) - e2 * factor;
       last = e2;
    }
 }
@@ -191,6 +212,49 @@ double iVWMA_M15(int p, int s)
    double spv = 0, sv = 0;
    for(int i=0; i<p; i++) { spv += c[i] * v[i]; sv += v[i]; }
    return (sv != 0) ? spv / sv : 0;
+}
+
+//+------------------------------------------------------------------+
+//| Linear Regression Logic (Pine Translation)                       |
+//+------------------------------------------------------------------+
+LR_Result CalculateLR(int length, int shift)
+{
+   LR_Result res = {0,0,0,0,0};
+   double src[];
+   ArraySetAsSeries(src, true);
+   if(CopyClose(_Symbol, PERIOD_M15, shift, length, src) < length) return res;
+
+   double sumX = 0, sumY = 0, sumXSqr = 0, sumXY = 0;
+   for(int i=0; i<length; i++)
+   {
+      double val = src[i];
+      double per = i + 1.0;
+      sumX += per; sumY += val;
+      sumXSqr += per * per;
+      sumXY += val * per;
+   }
+   res.slope = (length * sumXY - sumX * sumY) / (length * sumXSqr - sumX * sumX);
+   res.average = sumY / length;
+   res.intercept = res.average - res.slope * sumX / length + res.slope;
+
+   double stdDevAcc = 0, dsxx = 0, dsyy = 0, dsxy = 0;
+   double daY = res.intercept + res.slope * (length - 1) / 2.0;
+   double valLR = res.intercept;
+   for(int j=0; j<length; j++)
+   {
+      double price = src[j];
+      double dxt = price - res.average;
+      double dyt = valLR - daY;
+      stdDevAcc += MathPow(price - valLR, 2);
+      dsxx += dxt * dxt;
+      dsyy += dyt * dyt;
+      dsxy += dxt * dyt;
+      valLR += res.slope;
+   }
+   res.stdDev = MathSqrt(stdDevAcc / (length <= 1 ? 1 : length - 1));
+   res.pearsonR = (dsxx == 0 || dsyy == 0) ? 0 : dsxy / MathSqrt(dsxx * dsyy);
+
+   return res;
 }
 
 //+------------------------------------------------------------------+
@@ -329,13 +393,24 @@ int OnInit()
    ext_Global_TP_Buy = Global_TP_Buy; ext_Global_SL_Buy = Global_SL_Buy;
    ext_Global_TP_Sell = Global_TP_Sell; ext_Global_SL_Sell = Global_SL_Sell;
    handle_ema200 = iMA(_Symbol, PERIOD_M15, Filter_EMA_Period, 0, MODE_EMA, PRICE_CLOSE);
-   EventSetTimer(Telegram_Polling_Sec);
+
+   EventSetMillisecondTimer(250); // Faster timer for rose animation
    return(INIT_SUCCEEDED);
 }
 
 void OnDeinit(const int reason) { EventKillTimer(); ObjectsDeleteAll(0, UI_PREFIX); IndicatorRelease(handle_ema200); }
 
-void OnTimer() { FetchTelegramUpdates(); UpdateDashboard(); }
+void OnTimer()
+{
+   static int telCounter = 0;
+   telCounter++;
+   if(telCounter >= 4 * Telegram_Polling_Sec) // 4 * 250ms = 1s
+   {
+      FetchTelegramUpdates();
+      telCounter = 0;
+   }
+   UpdateDashboard();
+}
 
 int GetPrecisionSignal()
 {
@@ -363,24 +438,32 @@ void OnTick()
    CheckTargets();
 
    int signal = GetPrecisionSignal();
-   datetime current_bar = (datetime)SeriesInfoInteger(_Symbol, PERIOD_M15, SERIES_LASTBAR_DATE);
 
-   if(current_bar > last_signal_time)
+   // Handle Signal Reversal
+   if(signal == 1) // Trend is Bullish
    {
-      if(signal == 1)
-      {
+      if(PositionCount(POSITION_TYPE_SELL) > 0) {
          ClosePositions(POSITION_TYPE_SELL);
-         if(PositionCount(POSITION_TYPE_BUY) == 0) OpenOrder(ORDER_TYPE_BUY);
-         last_signal_time = current_bar;
-         SendTelegramMessage("🚀 Precision Buy on M15");
+         SendTelegramMessage("🔄 Reversing to BUY");
       }
-      else if(signal == -1)
-      {
+      if(PositionCount(POSITION_TYPE_BUY) == 0) OpenOrder(ORDER_TYPE_BUY);
+   }
+   else if(signal == -1) // Trend is Bearish
+   {
+      if(PositionCount(POSITION_TYPE_BUY) > 0) {
          ClosePositions(POSITION_TYPE_BUY);
-         if(PositionCount(POSITION_TYPE_SELL) == 0) OpenOrder(ORDER_TYPE_SELL);
-         last_signal_time = current_bar;
-         SendTelegramMessage("🔻 Precision Sell on M15");
+         SendTelegramMessage("🔄 Reversing to SELL");
       }
+      if(PositionCount(POSITION_TYPE_SELL) == 0) OpenOrder(ORDER_TYPE_SELL);
+   }
+
+   // Ensure always in the market
+   if(PositionCount(POSITION_TYPE_BUY) == 0 && PositionCount(POSITION_TYPE_SELL) == 0)
+   {
+      double p0 = CalculateMA(Primary_MA_Algo, Primary_MA_Period, 0, T3_Factor);
+      double ps = CalculateMA(Primary_MA_Algo, Primary_MA_Period, Trend_Smoothness, T3_Factor);
+      if(p0 >= ps) OpenOrder(ORDER_TYPE_BUY);
+      else OpenOrder(ORDER_TYPE_SELL);
    }
 }
 
@@ -395,17 +478,76 @@ int PositionCount(ENUM_POSITION_TYPE type)
 void UpdateDashboard()
 {
    int b = PositionCount(POSITION_TYPE_BUY), s = PositionCount(POSITION_TYPE_SELL);
-   CreateLabel("T", "PRECISION TREND SAR", 10, 10, clrAqua, CORNER_RIGHT_UPPER);
-   CreateLabel("S", "Trades: B["+IntegerToString(b)+"] S["+IntegerToString(s)+"]", 10, 30, clrWhite, CORNER_RIGHT_UPPER);
-   CreateLabel("P", "Profit: " + DoubleToString(AccountInfoDouble(ACCOUNT_PROFIT), 2), 10, 50, (AccountInfoDouble(ACCOUNT_PROFIT)>=0?clrLime:clrRed), CORNER_RIGHT_UPPER);
+   int total = b + s;
+
+   double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   double profit = AccountInfoDouble(ACCOUNT_PROFIT);
+   double spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD) * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   LR_Result lr = CalculateLR(100, 0);
+
+   int x = 20, y = 20, h = 20;
+   color headClr = clrGold;
+   color textClr = clrWhite;
+
+   // Artistic Data Table
+   CreateLabel("Box", "╔══════════════════════════════════╗", x, y, headClr, CORNER_RIGHT_UPPER, 10);
+   CreateLabel("Title", "║   PRECISION ARTISTIC TERMINAL    ║", x, y+h, headClr, CORNER_RIGHT_UPPER, 10);
+   CreateLabel("Sep1", "╠══════════════════════════════════╣", x, y+h*2, headClr, CORNER_RIGHT_UPPER, 10);
+
+   int row = y + h*3;
+   DrawArtRow("SYMBOL    ", _Symbol, x+15, row, textClr); row+=h;
+   DrawArtRow("BALANCE   ", DoubleToString(balance, 2), x+15, row, textClr); row+=h;
+   DrawArtRow("EQUITY    ", DoubleToString(equity, 2), x+15, row, textClr); row+=h;
+   DrawArtRow("NET PROFIT", DoubleToString(profit, 2), x+15, row, (profit>=0?clrLime:clrRed)); row+=h;
+   DrawArtRow("SPREAD    ", DoubleToString(spread, (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS)), x+15, row, clrSkyBlue); row+=h;
+   DrawArtRow("PEARSON R ", DoubleToString(lr.pearsonR, 4), x+15, row, headClr); row+=h;
+   DrawArtRow("TRADES B/S", IntegerToString(b)+" / "+IntegerToString(s), x+15, row, textClr); row+=h;
+
+   CreateLabel("Box_End", "╚══════════════════════════════════╝", x, row, headClr, CORNER_RIGHT_UPPER, 10);
+
+   //--- Rose Animation Logic (pas lentement = 250ms interval)
+   long now = GetTickCount();
+   if(now - lastRoseUpdate >= 250)
+   {
+      lastRoseUpdate = now;
+      if(total > 0 && roseFrame < ArraySize(roseFrames)-1) roseFrame++;
+      if(total == 0 && roseFrame > 0) roseFrame--;
+   }
+
+   color roseColor = (total > 0) ? clrCrimson : clrDimGray;
+   string roseText = roseFrames[roseFrame];
+
+   // Draw Artistic Rose
+   CreateLabel("Rose_F", roseText, 40, 300, roseColor, CORNER_LEFT_UPPER, 40);
+   CreateLabel("Rose_S", "  |  ", 55, 360, clrForestGreen, CORNER_LEFT_UPPER, 25);
+   CreateLabel("Rose_L", " /|\\ ", 55, 385, clrForestGreen, CORNER_LEFT_UPPER, 20);
+   CreateLabel("Rose_M", (total > 0 ? "LIFE" : "STILL"), 55, 430, roseColor, CORNER_LEFT_UPPER, 10);
+
+   ChartRedraw();
 }
 
-void CreateLabel(string name, string txt, int x, int y, color clr, ENUM_BASE_CORNER corner)
+void DrawArtRow(string label, string val, int x, int y, color valClr)
 {
-   string n = UI_PREFIX + name; if(ObjectFind(0, n) < 0) ObjectCreate(0, n, OBJ_LABEL, 0, 0, 0);
-   ObjectSetString(0, n, OBJPROP_TEXT, txt); ObjectSetInteger(0, n, OBJPROP_XDISTANCE, x);
-   ObjectSetInteger(0, n, OBJPROP_YDISTANCE, y); ObjectSetInteger(0, n, OBJPROP_CORNER, corner);
-   ObjectSetInteger(0, n, OBJPROP_COLOR, clr); ObjectSetInteger(0, n, OBJPROP_FONTSIZE, 10);
+   CreateLabel("L_"+label, "║ " + label + " |", x + 150, y, clrLightGray, CORNER_RIGHT_UPPER, 10);
+   CreateLabel("V_"+label, val + " ║", x, y, valClr, CORNER_RIGHT_UPPER, 10);
+}
+
+void CreateLabel(string name, string txt, int x, int y, color clr, ENUM_BASE_CORNER corner, int fontSize = 9)
+{
+   string n = UI_PREFIX + name;
+   if(ObjectFind(0, n) < 0)
+   {
+      ObjectCreate(0, n, OBJ_LABEL, 0, 0, 0);
+      ObjectSetInteger(0, n, OBJPROP_ANCHOR, (corner == CORNER_RIGHT_UPPER || corner == CORNER_RIGHT_LOWER) ? ANCHOR_RIGHT_UPPER : ANCHOR_LEFT_UPPER);
+   }
+   ObjectSetString(0, n, OBJPROP_TEXT, txt);
+   ObjectSetInteger(0, n, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, n, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, n, OBJPROP_CORNER, corner);
+   ObjectSetInteger(0, n, OBJPROP_COLOR, clr);
+   ObjectSetInteger(0, n, OBJPROP_FONTSIZE, fontSize);
+   ObjectSetString(0, n, OBJPROP_FONT, "Courier New");
 }
 
 void CheckTargets()
