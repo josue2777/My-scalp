@@ -84,6 +84,7 @@ datetime lastCatMove = 0;
 int tailState = 0;
 
 //--- Modifiable Global States (initialized from inputs)
+long ext_Telegram_ChatID;
 bool ext_Bot_Active;
 bool ext_Use_MultiLevel_TP;
 double ext_TP_Level1, ext_TP_Level2, ext_TP_Level3;
@@ -98,19 +99,29 @@ double ext_Target_Loss = 0;
 //+------------------------------------------------------------------+
 void SendTelegramMessage(string message)
 {
-   if(Telegram_Token == "" || Telegram_ChatID == 0) return;
+   if(Telegram_Token == "" || ext_Telegram_ChatID == 0) return;
 
    string url = "https://api.telegram.org/bot" + Telegram_Token + "/sendMessage";
-   string payload = "chat_id=" + IntegerToString(Telegram_ChatID) + "&text=" + message;
+
+   // Simple URL encoding for message
+   StringReplace(message, " ", "%20");
+   StringReplace(message, "\n", "%0A");
+   StringReplace(message, "#", "%23");
+   StringReplace(message, "&", "%26");
+
+   string payload = "chat_id=" + IntegerToString(ext_Telegram_ChatID) + "&text=" + message;
    char data[], result[];
-   string headers;
+   string headers = "Content-Type: application/x-www-form-urlencoded\r\n";
 
-   StringToCharArray(payload, data);
+   int len = StringToCharArray(payload, data);
+   if(len > 0) ArrayResize(data, len - 1); // Remove null terminator
 
-   int res = WebRequest("POST", url, NULL, 5000, data, result, headers);
+   int res = WebRequest("POST", url, headers, 5000, data, result, headers);
 
    if(res == -1)
-      Print("WebRequest Error: ", GetLastError());
+      Print("Telegram Send Error: ", GetLastError());
+   else if(res != 200)
+      Print("Telegram API Error Code: ", res, " Response: ", CharArrayToString(result));
 }
 
 //+------------------------------------------------------------------+
@@ -120,7 +131,8 @@ void FetchTelegramUpdates()
 {
    if(Telegram_Token == "") return;
 
-   string url = "https://api.telegram.org/bot" + Telegram_Token + "/getUpdates?offset=" + IntegerToString(last_telegram_update_id + 1);
+   // Increase limit to 10 and add timeout
+   string url = "https://api.telegram.org/bot" + Telegram_Token + "/getUpdates?offset=" + IntegerToString(last_telegram_update_id + 1) + "&limit=10&timeout=2";
    char data[], result[];
    string headers;
 
@@ -139,6 +151,27 @@ void FetchTelegramUpdates()
          if(updateIdStr != "")
          {
             last_telegram_update_id = StringToInteger(updateIdStr);
+
+            // Extract Chat ID dynamically if not set or if we want to ensure we reply to the right person
+            int chatPos = StringFind(response, "\"chat\"", updatePos);
+            if(chatPos != -1)
+            {
+               string chatIdStr = StringExtract(response, "\"id\"", chatPos);
+               if(chatIdStr != "")
+               {
+                  long cid = StringToInteger(chatIdStr);
+                  if(ext_Telegram_ChatID == 0)
+                  {
+                     ext_Telegram_ChatID = cid;
+                     Print("Telegram Chat ID detected: ", ext_Telegram_ChatID);
+                     SendTelegramMessage("Bonjour Monsieur, je suis maintenant connecté à votre compte. Comment puis-je vous aider aujourd'hui ?");
+                  }
+                  else
+                  {
+                     ext_Telegram_ChatID = cid; // Update to latest sender
+                  }
+               }
+            }
 
             // Extract the text for this specific update_id block
             string text = StringExtract(response, "\"text\"", updatePos);
@@ -249,7 +282,7 @@ void ProcessTelegramCommand(string text)
    }
    else if(text == "MYID")
    {
-      reply = "Your Chat ID is: " + IntegerToString(Telegram_ChatID);
+      reply = "Your Chat ID is: " + IntegerToString(ext_Telegram_ChatID);
       handled = true;
    }
    else if(text == "ANALYSE" || text == "ANALYSIS")
@@ -532,6 +565,7 @@ string GetMarketAnalysis()
 //+------------------------------------------------------------------+
 void SendChartScreenshot()
 {
+   if(ext_Telegram_ChatID == 0) return;
    string filename = "GoatChart_" + _Symbol + ".png";
    if(!ChartScreenShot(0, filename, 1200, 800, ALIGN_RIGHT))
    {
@@ -552,7 +586,7 @@ void SendChartScreenshot()
    FileReadArray(handle, photoData);
    FileClose(handle);
 
-   if(Telegram_Token == "" || Telegram_ChatID == 0) return;
+   if(Telegram_Token == "" || ext_Telegram_ChatID == 0) return;
 
    string url = "https://api.telegram.org/bot" + Telegram_Token + "/sendPhoto";
    string boundary = "-------GoatBoundary" + IntegerToString((int)TimeCurrent());
@@ -560,7 +594,7 @@ void SendChartScreenshot()
 
    string part1 = "--" + boundary + "\r\n" +
                   "Content-Disposition: form-data; name=\"chat_id\"\r\n\r\n" +
-                  IntegerToString(Telegram_ChatID) + "\r\n" +
+                  IntegerToString(ext_Telegram_ChatID) + "\r\n" +
                   "--" + boundary + "\r\n" +
                   "Content-Disposition: form-data; name=\"photo\"; filename=\"" + filename + "\"\r\n" +
                   "Content-Type: image/png\r\n\r\n";
@@ -952,6 +986,8 @@ void CleanupUI()
 //+------------------------------------------------------------------+
 int OnInit()
 {
+   ext_Telegram_ChatID = Telegram_ChatID;
+
    // Initialize Indicator Handles
    handle_m15 = iCustom(_Symbol, PERIOD_M15, Custom_Indicator_Name);
    handle_m30 = iCustom(_Symbol, PERIOD_M30, Custom_Indicator_Name);
