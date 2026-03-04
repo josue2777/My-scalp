@@ -207,16 +207,29 @@ void ExecuteSAR(int new_trend)
 double CalculateLot()
 {
    if(LotMode == FIXED_LOT) return Fixed_Lot;
-   double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
    double lot = 0.01;
-   if(balance >= 2 && balance <= 1000) lot = 0.01;
-   else if(balance > 1000 && balance <= 5000) lot = 0.1;
-   else if(balance > 5000 && balance <= 13000) lot = 0.2;
-   else if(balance > 13000 && balance <= 50000) lot = 0.3;
-   else if(balance > 50000 && balance <= 150000) lot = 0.50;
-   else if(balance > 150000 && balance <= 350000) lot = 1.0;
-   else if(balance > 350000 && balance <= 750000) lot = 3.0;
-   else if(balance > 750000) lot = (balance / 750000.0) * 3.0;
+
+   if(equity < 25)               lot = 0.01;
+   else if(equity < 40)          lot = 0.01;
+   else if(equity < 70)          lot = 0.02;
+   else if(equity < 120)         lot = 0.02;
+   else if(equity < 200)         lot = 0.03;
+   else if(equity < 400)         lot = 0.10;
+   else if(equity < 700)         lot = 0.12;
+   else if(equity < 1200)        lot = 0.20;
+   else if(equity < 10000)       lot = 0.50;
+   else if(equity < 100000)      lot = 5.00;
+   else if(equity < 250000)      lot = 8.00;
+   else if(equity < 500000)      lot = 12.00;
+   else if(equity < 1000000)     lot = 20.00;
+   else if(equity < 5000000)     lot = 30.00;
+   else if(equity < 10000000)    lot = 40.00;
+   else if(equity < 25000000)    lot = 60.00;
+   else if(equity < 50000000)    lot = 80.00;
+   else if(equity < 100000000)   lot = 100.00;
+   else if(equity < 300000000)   lot = 120.00;
+   else                          lot = 150.00;
 
    double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
    double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
