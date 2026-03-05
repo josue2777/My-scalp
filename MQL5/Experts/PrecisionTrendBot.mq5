@@ -41,8 +41,8 @@ input double Global_SL_Buy = 0.0;
 input double Global_TP_Sell = 0.0;
 input double Global_SL_Sell = 0.0;
 
-input group "--- Scalping de Conservation ---"
-input bool Use_Trailing = true;          // Enable Trailing Stop
+input group "--- Swing Management ---"
+input bool Use_Trailing = false;         // Enable Trailing Stop (Disabled for Swing)
 input int Trailing_Start = 50;           // Trailing Start (Points)
 input int Trailing_Stop = 30;            // Trailing distance (Points)
 input int Trailing_Step = 10;            // Trailing step (Points)
@@ -567,7 +567,7 @@ void UpdateDashboard()
    CreateLabel("Rose_S", "  |  ", 55, 365, clrForestGreen, CORNER_LEFT_UPPER, 25);
    CreateLabel("Rose_L1", " /|\\ ", 55, 390, clrForestGreen, CORNER_LEFT_UPPER, 20);
    CreateLabel("Rose_L2", "  |  ", 55, 415, clrForestGreen, CORNER_LEFT_UPPER, 20);
-   CreateLabel("Rose_M", (total > 0 ? "V I T A L I T Y" : "S I L E N C E"), 40, 460, roseColor, CORNER_LEFT_UPPER, 10);
+   CreateLabel("Rose_M", (total > 0 ? "S W I N G   F L O W" : "S I L E N C E"), 40, 460, roseColor, CORNER_LEFT_UPPER, 10);
 
    ChartRedraw();
 }
