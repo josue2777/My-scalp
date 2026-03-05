@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2024, GOAT TRADING"
 #property link      "https://www.mql5.com"
-#property version   "1.20"
+#property version   "1.30"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -70,12 +70,20 @@ string UI_PREFIX = "PTB_UI_";
 int roseFrame = 0;
 long lastRoseUpdate = 0;
 string roseFrames[] = {
-   "  .  ",
-   " ( ) ",
-   " { } ",
-   "(@_@)",
-   "{{@}}",
-   " (V) "
+   "       .       ",
+   "      ( )      ",
+   "     ( @ )     ",
+   "    (  @  )    ",
+   "   (   @   )   ",
+   "  (  @_@_@  )  ",
+   " ( @@@@@@@@@ ) ",
+   " {@@@@@@@@@@@} ",
+   "  [@@@@@@@@@]  ",
+   "   \\@@@@@@@/   ",
+   "    \\@@@@@/    ",
+   "     \\@@@/     ",
+   "      \\@/      ",
+   "       V       "
 };
 
 //--- Linear Regression Variables
@@ -104,21 +112,21 @@ double ext_Target_Loss = 0;
 double CalculateMA(MA_Type type, int period, int shift, double t3_vfac = 0.7)
 {
    int lookback = period * 5 + 100;
-   double price[];
-   ArraySetAsSeries(price, true);
-   if(CopyClose(_Symbol, PERIOD_M15, 0, lookback + shift, price) < period + shift) return 0;
+   double price_arr[];
+   ArraySetAsSeries(price_arr, true);
+   if(CopyClose(_Symbol, PERIOD_M15, 0, lookback + shift, price_arr) < period + shift) return 0;
 
    switch(type)
    {
-      case SMA: return iSMA_Iterative(price, period, shift);
-      case EMA: return iEMA_Iterative(price, period, shift);
-      case WMA: return iWMA_Iterative(price, period, shift);
-      case Hull: return iHullMA_Iterative(price, period, shift);
+      case SMA: return iSMA_Iterative(price_arr, period, shift);
+      case EMA: return iEMA_Iterative(price_arr, period, shift);
+      case WMA: return iWMA_Iterative(price_arr, period, shift);
+      case Hull: return iHullMA_Iterative(price_arr, period, shift);
       case VWMA: return iVWMA_M15(period, shift);
-      case SMMA: return iSMMA_Iterative(price, period, shift);
-      case TEMA: return iTEMA_Iterative(price, period, shift);
-      case T3: return iT3_Iterative(price, period, shift, t3_vfac);
-      default: return iSMA_Iterative(price, period, shift);
+      case SMMA: return iSMMA_Iterative(price_arr, period, shift);
+      case TEMA: return iTEMA_Iterative(price_arr, period, shift);
+      case T3: return iT3_Iterative(price_arr, period, shift, t3_vfac);
+      default: return iSMA_Iterative(price_arr, period, shift);
    }
 }
 
@@ -189,6 +197,7 @@ void iT3_GD_Array(const double &in_data[], double &out_data[], int p, double fac
 {
    double alpha = 2.0 / (p + 1.0);
    int n = ArraySize(in_data);
+   ArrayResize(out_data, n);
    double e1[]; ArrayResize(e1, n);
    double last = in_data[n-1];
    for(int i=n-1; i>=0; i--) { e1[i] = alpha * in_data[i] + (1.0 - alpha) * last; last = e1[i]; }
@@ -213,10 +222,11 @@ double iT3_Iterative(const double &src[], int p, int s, double factor)
 
 double iVWMA_M15(int p, int s)
 {
-   double c[], v[];
-   if(CopyClose(_Symbol, PERIOD_M15, s, p, c) < p || CopyTickVolume(_Symbol, PERIOD_M15, s, p, v) < p) return 0;
+   double c_p[];
+   long v_p[];
+   if(CopyClose(_Symbol, PERIOD_M15, s, p, c_p) < p || CopyTickVolume(_Symbol, PERIOD_M15, s, p, v_p) < p) return 0;
    double spv = 0, sv = 0;
-   for(int i=0; i<p; i++) { spv += c[i] * v[i]; sv += v[i]; }
+   for(int i=0; i<p; i++) { spv += c_p[i] * (double)v_p[i]; sv += (double)v_p[i]; }
    return (sv != 0) ? spv / sv : 0;
 }
 
@@ -226,14 +236,14 @@ double iVWMA_M15(int p, int s)
 LR_Result CalculateLR(int length, int shift)
 {
    LR_Result res = {0,0,0,0,0};
-   double src[];
-   ArraySetAsSeries(src, true);
-   if(CopyClose(_Symbol, PERIOD_M15, shift, length, src) < length) return res;
+   double src_p[];
+   ArraySetAsSeries(src_p, true);
+   if(CopyClose(_Symbol, PERIOD_M15, shift, length, src_p) < length) return res;
 
    double sumX = 0, sumY = 0, sumXSqr = 0, sumXY = 0;
    for(int i=0; i<length; i++)
    {
-      double val = src[i];
+      double val = src_p[i];
       double per = i + 1.0;
       sumX += per; sumY += val;
       sumXSqr += per * per;
@@ -248,7 +258,7 @@ LR_Result CalculateLR(int length, int shift)
    double valLR = res.intercept;
    for(int j=0; j<length; j++)
    {
-      double price = src[j];
+      double price = src_p[j];
       double dxt = price - res.average;
       double dyt = valLR - daY;
       stdDevAcc += MathPow(price - valLR, 2);
@@ -268,10 +278,10 @@ LR_Result CalculateLR(int length, int shift)
 //+------------------------------------------------------------------+
 bool OpenOrder(ENUM_ORDER_TYPE type)
 {
-   MqlTick tick;
-   if(!SymbolInfoTick(_Symbol, tick)) return false;
+   MqlTick tick_p;
+   if(!SymbolInfoTick(_Symbol, tick_p)) return false;
    double lot = CalculateLot();
-   double price = (type == ORDER_TYPE_BUY) ? tick.ask : tick.bid;
+   double price = (type == ORDER_TYPE_BUY) ? tick_p.ask : tick_p.bid;
    double sl = (type == ORDER_TYPE_BUY) ? ext_Global_SL_Buy : ext_Global_SL_Sell;
    double tp = (type == ORDER_TYPE_BUY) ? ext_Global_TP_Buy : ext_Global_TP_Sell;
    trade.SetTypeFillingBySymbol(_Symbol);
@@ -311,9 +321,8 @@ double CalculateLot()
    else if(balance > 50000 && balance <= 150000) lot = 0.50;
    else if(balance > 150000 && balance <= 350000) lot = 1.00;
    else if(balance > 350000 && balance <= 750000) lot = 3.00;
-   else if(balance > 750000) lot = (balance / 750000.0) * 3.0; // Proportional scaling for large capital
+   else if(balance > 750000) lot = (balance / 750000.0) * 3.0;
 
-   // Respect broker constraints
    double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
    lot = MathFloor(lot / lotStep) * lotStep;
    double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
@@ -400,7 +409,7 @@ int OnInit()
    ext_Global_TP_Sell = Global_TP_Sell; ext_Global_SL_Sell = Global_SL_Sell;
    handle_ema200 = iMA(_Symbol, PERIOD_M15, Filter_EMA_Period, 0, MODE_EMA, PRICE_CLOSE);
 
-   EventSetMillisecondTimer(250); // Faster timer for rose animation
+   EventSetMillisecondTimer(250);
    return(INIT_SUCCEEDED);
 }
 
@@ -410,7 +419,7 @@ void OnTimer()
 {
    static int telCounter = 0;
    telCounter++;
-   if(telCounter >= 4 * Telegram_Polling_Sec) // 4 * 250ms = 1s
+   if(telCounter >= 4 * Telegram_Polling_Sec)
    {
       FetchTelegramUpdates();
       telCounter = 0;
@@ -426,14 +435,13 @@ int GetPrecisionSignal()
    double ps1 = CalculateMA(Primary_MA_Algo, Primary_MA_Period, Trend_Smoothness + 1, T3_Factor);
    double s0 = CalculateMA(Secondary_MA_Algo, Secondary_MA_Period, 0, T3_Factor);
 
-   double ema200[];
-   if(CopyBuffer(handle_ema200, 0, 0, 1, ema200) <= 0) return 0;
-   double price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double ema200_arr[]; CopyBuffer(handle_ema200, 0, 0, 1, ema200_arr);
+   double price_bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
 
    bool cBull = p0 >= ps, cBear = p0 < ps, pBull = p1 >= ps1, pBear = p1 < ps1;
 
-   if(cBull && pBear && s0 > p0 && (!Use_EMA_Filter || price > ema200[0])) return 1;
-   if(cBear && pBull && s0 < p0 && (!Use_EMA_Filter || price < ema200[0])) return -1;
+   if(cBull && pBear && s0 > p0 && (!Use_EMA_Filter || price_bid > ema200_arr[0])) return 1;
+   if(cBear && pBull && s0 < p0 && (!Use_EMA_Filter || price_bid < ema200_arr[0])) return -1;
 
    return 0;
 }
@@ -446,8 +454,7 @@ void OnTick()
 
    int signal = GetPrecisionSignal();
 
-   // Handle Signal Reversal
-   if(signal == 1) // Trend is Bullish
+   if(signal == 1)
    {
       if(PositionCount(POSITION_TYPE_SELL) > 0) {
          ClosePositions(POSITION_TYPE_SELL);
@@ -455,7 +462,7 @@ void OnTick()
       }
       if(PositionCount(POSITION_TYPE_BUY) == 0) OpenOrder(ORDER_TYPE_BUY);
    }
-   else if(signal == -1) // Trend is Bearish
+   else if(signal == -1)
    {
       if(PositionCount(POSITION_TYPE_BUY) > 0) {
          ClosePositions(POSITION_TYPE_BUY);
@@ -464,7 +471,6 @@ void OnTick()
       if(PositionCount(POSITION_TYPE_SELL) == 0) OpenOrder(ORDER_TYPE_SELL);
    }
 
-   // Ensure always in the market
    if(PositionCount(POSITION_TYPE_BUY) == 0 && PositionCount(POSITION_TYPE_SELL) == 0)
    {
       double p0 = CalculateMA(Primary_MA_Algo, Primary_MA_Period, 0, T3_Factor);
@@ -476,7 +482,7 @@ void OnTick()
 
 void ApplyTrailingStop()
 {
-   double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   double point_p = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
       ulong t = PositionGetTicket(i);
@@ -484,24 +490,24 @@ void ApplyTrailingStop()
       {
          double curSL = PositionGetDouble(POSITION_SL);
          double openP = PositionGetDouble(POSITION_PRICE_OPEN);
-         double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-         double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+         double bid_p = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+         double ask_p = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
 
          if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
          {
-            if(bid - openP > Trailing_Start * point)
+            if(bid_p - openP > Trailing_Start * point_p)
             {
-               double newSL = NormalizeDouble(bid - Trailing_Stop * point, (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS));
-               if(newSL > curSL + Trailing_Step * point || curSL == 0)
+               double newSL = NormalizeDouble(bid_p - Trailing_Stop * point_p, (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS));
+               if(newSL > curSL + Trailing_Step * point_p || curSL == 0)
                   trade.PositionModify(t, newSL, PositionGetDouble(POSITION_TP));
             }
          }
          else
          {
-            if(openP - ask > Trailing_Start * point)
+            if(openP - ask_p > Trailing_Start * point_p)
             {
-               double newSL = NormalizeDouble(ask + Trailing_Stop * point, (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS));
-               if(newSL < curSL - Trailing_Step * point || curSL == 0)
+               double newSL = NormalizeDouble(ask_p + Trailing_Stop * point_p, (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS));
+               if(newSL < curSL - Trailing_Step * point_p || curSL == 0)
                   trade.PositionModify(t, newSL, PositionGetDouble(POSITION_TP));
             }
          }
@@ -532,7 +538,6 @@ void UpdateDashboard()
    color headClr = clrGold;
    color textClr = clrWhite;
 
-   // Artistic Data Table
    CreateLabel("Box", "╔══════════════════════════════════╗", x, y, headClr, CORNER_RIGHT_UPPER, 10);
    CreateLabel("Title", "║   P R E S T I G E   T E R M I N A L  ║", x, y+h, headClr, CORNER_RIGHT_UPPER, 10);
    CreateLabel("Sep1", "╠══════════════════════════════════╣", x, y+h*2, headClr, CORNER_RIGHT_UPPER, 10);
@@ -547,7 +552,6 @@ void UpdateDashboard()
 
    CreateLabel("Box_End", "╚══════════════════════════════════╝", x, row, headClr, CORNER_RIGHT_UPPER, 10);
 
-   //--- Rose Animation Logic (pas lentement = 200ms interval)
    long now = GetTickCount();
    if(now - lastRoseUpdate >= 200)
    {
@@ -559,7 +563,6 @@ void UpdateDashboard()
    color roseColor = (total > 0) ? clrCrimson : clrSlateGray;
    string roseText = roseFrames[roseFrame];
 
-   // Draw Majestic Rose
    CreateLabel("Rose_F", roseText, 40, 300, roseColor, CORNER_LEFT_UPPER, 45);
    CreateLabel("Rose_S", "  |  ", 55, 365, clrForestGreen, CORNER_LEFT_UPPER, 25);
    CreateLabel("Rose_L1", " /|\\ ", 55, 390, clrForestGreen, CORNER_LEFT_UPPER, 20);
@@ -594,7 +597,7 @@ void CreateLabel(string name, string txt, int x, int y, color clr, ENUM_BASE_COR
 
 void CheckTargets()
 {
-   double p = AccountInfoDouble(ACCOUNT_PROFIT);
-   if(ext_Target_Profit > 0 && p >= ext_Target_Profit) { CloseAllPositions(); ext_Target_Profit = 0; }
-   if(ext_Target_Loss > 0 && p <= -ext_Target_Loss) { CloseAllPositions(); ext_Target_Loss = 0; }
+   double p_val = AccountInfoDouble(ACCOUNT_PROFIT);
+   if(ext_Target_Profit > 0 && p_val >= ext_Target_Profit) { CloseAllPositions(); ext_Target_Profit = 0; }
+   if(ext_Target_Loss > 0 && p_val <= -ext_Target_Loss) { CloseAllPositions(); ext_Target_Loss = 0; }
 }
