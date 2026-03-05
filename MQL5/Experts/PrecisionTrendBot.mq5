@@ -454,29 +454,29 @@ void OnTick()
 
    int signal = GetPrecisionSignal();
 
-   if(signal == 1)
-   {
-      if(PositionCount(POSITION_TYPE_SELL) > 0) {
-         ClosePositions(POSITION_TYPE_SELL);
-         SendTelegramMessage("🔄 Reversing to BUY");
-      }
-      if(PositionCount(POSITION_TYPE_BUY) == 0) OpenOrder(ORDER_TYPE_BUY);
-   }
-   else if(signal == -1)
+   if(signal == 1) // Bullish detection -> CONTRARIAN SELL
    {
       if(PositionCount(POSITION_TYPE_BUY) > 0) {
          ClosePositions(POSITION_TYPE_BUY);
-         SendTelegramMessage("🔄 Reversing to SELL");
+         SendTelegramMessage("🔄 Reversing to CONTRARIAN SELL");
       }
       if(PositionCount(POSITION_TYPE_SELL) == 0) OpenOrder(ORDER_TYPE_SELL);
+   }
+   else if(signal == -1) // Bearish detection -> CONTRARIAN BUY
+   {
+      if(PositionCount(POSITION_TYPE_SELL) > 0) {
+         ClosePositions(POSITION_TYPE_SELL);
+         SendTelegramMessage("🔄 Reversing to CONTRARIAN BUY");
+      }
+      if(PositionCount(POSITION_TYPE_BUY) == 0) OpenOrder(ORDER_TYPE_BUY);
    }
 
    if(PositionCount(POSITION_TYPE_BUY) == 0 && PositionCount(POSITION_TYPE_SELL) == 0)
    {
       double p0 = CalculateMA(Primary_MA_Algo, Primary_MA_Period, 0, T3_Factor);
       double ps = CalculateMA(Primary_MA_Algo, Primary_MA_Period, Trend_Smoothness, T3_Factor);
-      if(p0 >= ps) OpenOrder(ORDER_TYPE_BUY);
-      else OpenOrder(ORDER_TYPE_SELL);
+      if(p0 >= ps) OpenOrder(ORDER_TYPE_SELL); // Inverted init
+      else OpenOrder(ORDER_TYPE_BUY);          // Inverted init
    }
 }
 
@@ -567,7 +567,7 @@ void UpdateDashboard()
    CreateLabel("Rose_S", "  |  ", 55, 365, clrForestGreen, CORNER_LEFT_UPPER, 25);
    CreateLabel("Rose_L1", " /|\\ ", 55, 390, clrForestGreen, CORNER_LEFT_UPPER, 20);
    CreateLabel("Rose_L2", "  |  ", 55, 415, clrForestGreen, CORNER_LEFT_UPPER, 20);
-   CreateLabel("Rose_M", (total > 0 ? "S W I N G   F L O W" : "S I L E N C E"), 40, 460, roseColor, CORNER_LEFT_UPPER, 10);
+   CreateLabel("Rose_M", (total > 0 ? "C O N T R A R I A N" : "S I L E N C E"), 40, 460, roseColor, CORNER_LEFT_UPPER, 10);
 
    ChartRedraw();
 }
