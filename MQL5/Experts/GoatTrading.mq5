@@ -8,6 +8,8 @@
 #property version   "1.00"
 #property strict
 
+#define EXPIRATION_DATE D'2026.03.14 00:00'
+
 #include <Trade\Trade.mqh>
 CTrade trade;
 
@@ -868,6 +870,26 @@ void CreateLabel(string name, string text, int x, int y, color clr, ENUM_BASE_CO
 }
 
 //+------------------------------------------------------------------+
+//| Helper to create UI Rectangles                                   |
+//+------------------------------------------------------------------+
+void CreateRect(string name, int x, int y, int width, int height, color clr, ENUM_BASE_CORNER corner, int border=1)
+{
+   string objName = UI_PREFIX + name;
+   if(ObjectFind(0, objName) < 0)
+      ObjectCreate(0, objName, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+
+   ObjectSetInteger(0, objName, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, objName, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, objName, OBJPROP_XSIZE, width);
+   ObjectSetInteger(0, objName, OBJPROP_YSIZE, height);
+   ObjectSetInteger(0, objName, OBJPROP_COLOR, clr);
+   ObjectSetInteger(0, objName, OBJPROP_BGCOLOR, clr);
+   ObjectSetInteger(0, objName, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   ObjectSetInteger(0, objName, OBJPROP_CORNER, corner);
+   ObjectSetInteger(0, objName, OBJPROP_WIDTH, border);
+}
+
+//+------------------------------------------------------------------+
 //| Update the dashboard on chart (Graphical UI)                     |
 //+------------------------------------------------------------------+
 void UpdateDashboard()
@@ -904,6 +926,13 @@ void UpdateDashboard()
    color textColor = clrWhite;
    color statusColor = ext_Bot_Active ? clrLime : clrRed;
    string statusText = ext_Bot_Active ? "ACTIVE" : "SLEEPING";
+
+   if(IsExpired())
+   {
+      statusText = "EXPIRED";
+      statusColor = clrRed;
+      ext_Bot_Active = false;
+   }
 
    //--- Draw Egyptian Cat (Left Upper Corner, Side View)
    string c[13];
@@ -954,20 +983,78 @@ void UpdateDashboard()
    for(int i=0; i<11; i++)
       CreateLabel("CatLine"+IntegerToString(i), c[i], xCat, yCat + i*cSpacing, catColor, CORNER_LEFT_UPPER, 11, ANCHOR_LEFT_UPPER);
 
-   //--- Draw Info (Right Upper Corner) - Scaled down
-   int xInfo = 20;
-   int yInfo = 20;
-   int spacing = 24;
-   CreateLabel("Title", "== GOAT TRADING ==", xInfo, yInfo, clrAqua, CORNER_RIGHT_UPPER, 18, ANCHOR_RIGHT_UPPER);
-   CreateLabel("Status", "STATUS: " + statusText, xInfo, yInfo + spacing, statusColor, CORNER_RIGHT_UPPER, 14, ANCHOR_RIGHT_UPPER);
-   CreateLabel("Balance", "Balance: " + DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2), xInfo, yInfo + spacing*2, textColor, CORNER_RIGHT_UPPER, 12, ANCHOR_RIGHT_UPPER);
-   CreateLabel("Equity", "Equity:  " + DoubleToString(AccountInfoDouble(ACCOUNT_EQUITY), 2), xInfo, yInfo + spacing*3, textColor, CORNER_RIGHT_UPPER, 12, ANCHOR_RIGHT_UPPER);
-   CreateLabel("Profit", "Profit:  " + DoubleToString(AccountInfoDouble(ACCOUNT_PROFIT), 2), xInfo, yInfo + spacing*4, (AccountInfoDouble(ACCOUNT_PROFIT)>=0?clrLime:clrRed), CORNER_RIGHT_UPPER, 12, ANCHOR_RIGHT_UPPER);
-   CreateLabel("Trades", "BUY["+IntegerToString(totalBuy)+"] SELL["+IntegerToString(totalSell)+"]", xInfo, yInfo + spacing*5, textColor, CORNER_RIGHT_UPPER, 12, ANCHOR_RIGHT_UPPER);
-   CreateLabel("Lotting", "Lotting: " + ((LotMode==FIXED_LOT)?"FIXED":"AUTO"), xInfo, yInfo + spacing*6, textColor, CORNER_RIGHT_UPPER, 12, ANCHOR_RIGHT_UPPER);
+   //--- Draw Magnificent Data Table (Right Upper Corner)
+   int xTable = 20;
+   int yTable = 20;
+   int width = 280;
+   int rowHeight = 22;
+   int rows = 10;
+   int headerHeight = 30;
+
+   // Calculate Today's Profit
+   double dailyProfit = 0;
+   HistorySelect(iTime(_Symbol, PERIOD_D1, 0), TimeCurrent());
+   for(int i=HistoryDealsTotal()-1; i>=0; i--)
+   {
+      ulong ticket = HistoryDealGetTicket(i);
+      if(HistoryDealGetString(ticket, DEAL_SYMBOL) == _Symbol)
+         dailyProfit += HistoryDealGetDouble(ticket, DEAL_PROFIT);
+   }
+
+   double floatingProfit = AccountInfoDouble(ACCOUNT_PROFIT);
+   double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   double drawdown = (balance > 0) ? (MathAbs(floatingProfit) / balance) * 100.0 : 0;
+   double spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD) * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+
+   // Background & Header
+   CreateRect("TableBG", xTable, yTable, width, headerHeight + (rows * rowHeight) + 10, C'30,30,30', CORNER_RIGHT_UPPER);
+   CreateRect("TableHeader", xTable, yTable, width, headerHeight, clrGold, CORNER_RIGHT_UPPER);
+   CreateLabel("TableTitle", "GOAT TRADING SYSTEMS", xTable + 140, yTable + 5, clrBlack, CORNER_RIGHT_UPPER, 12, ANCHOR_RIGHT_UPPER);
+
+   // Data Rows
+   int curY = yTable + headerHeight + 5;
+   int xCol1 = xTable + 260;
+   int xCol2 = xTable + 20;
+
+   CreateLabel("L_Status", "STATUS:", xCol1, curY, clrWhite, CORNER_RIGHT_UPPER, 10, ANCHOR_RIGHT_UPPER);
+   CreateLabel("V_Status", statusText, xCol2, curY, statusColor, CORNER_RIGHT_UPPER, 10, ANCHOR_RIGHT_UPPER);
+   curY += rowHeight;
+
+   CreateLabel("L_Balance", "BALANCE:", xCol1, curY, clrWhite, CORNER_RIGHT_UPPER, 10, ANCHOR_RIGHT_UPPER);
+   CreateLabel("V_Balance", DoubleToString(balance, 2) + " $", xCol2, curY, clrGold, CORNER_RIGHT_UPPER, 10, ANCHOR_RIGHT_UPPER);
+   curY += rowHeight;
+
+   CreateLabel("L_Equity", "EQUITY:", xCol1, curY, clrWhite, CORNER_RIGHT_UPPER, 10, ANCHOR_RIGHT_UPPER);
+   CreateLabel("V_Equity", DoubleToString(AccountInfoDouble(ACCOUNT_EQUITY), 2) + " $", xCol2, curY, clrGold, CORNER_RIGHT_UPPER, 10, ANCHOR_RIGHT_UPPER);
+   curY += rowHeight;
+
+   CreateLabel("L_DProfit", "TODAY PROFIT:", xCol1, curY, clrWhite, CORNER_RIGHT_UPPER, 10, ANCHOR_RIGHT_UPPER);
+   CreateLabel("V_DProfit", DoubleToString(dailyProfit, 2) + " $", xCol2, curY, (dailyProfit >= 0 ? clrLime : clrRed), CORNER_RIGHT_UPPER, 10, ANCHOR_RIGHT_UPPER);
+   curY += rowHeight;
+
+   CreateLabel("L_FProfit", "FLOATING P/L:", xCol1, curY, clrWhite, CORNER_RIGHT_UPPER, 10, ANCHOR_RIGHT_UPPER);
+   CreateLabel("V_FProfit", DoubleToString(floatingProfit, 2) + " $", xCol2, curY, (floatingProfit >= 0 ? clrLime : clrRed), CORNER_RIGHT_UPPER, 10, ANCHOR_RIGHT_UPPER);
+   curY += rowHeight;
+
+   CreateLabel("L_Drawdown", "DRAWDOWN:", xCol1, curY, clrWhite, CORNER_RIGHT_UPPER, 10, ANCHOR_RIGHT_UPPER);
+   CreateLabel("V_Drawdown", DoubleToString(drawdown, 2) + " %", xCol2, curY, (drawdown > 5 ? clrOrange : clrGold), CORNER_RIGHT_UPPER, 10, ANCHOR_RIGHT_UPPER);
+   curY += rowHeight;
+
+   CreateLabel("L_Positions", "POSITIONS:", xCol1, curY, clrWhite, CORNER_RIGHT_UPPER, 10, ANCHOR_RIGHT_UPPER);
+   CreateLabel("V_Positions", "B:" + IntegerToString(totalBuy) + " S:" + IntegerToString(totalSell), xCol2, curY, clrAqua, CORNER_RIGHT_UPPER, 10, ANCHOR_RIGHT_UPPER);
+   curY += rowHeight;
+
+   CreateLabel("L_LotMode", "LOT MODE:", xCol1, curY, clrWhite, CORNER_RIGHT_UPPER, 10, ANCHOR_RIGHT_UPPER);
+   CreateLabel("V_LotMode", (LotMode == FIXED_LOT ? "FIXED" : "AUTO"), xCol2, curY, clrGold, CORNER_RIGHT_UPPER, 10, ANCHOR_RIGHT_UPPER);
+   curY += rowHeight;
+
+   CreateLabel("L_Spread", "SPREAD:", xCol1, curY, clrWhite, CORNER_RIGHT_UPPER, 10, ANCHOR_RIGHT_UPPER);
+   CreateLabel("V_Spread", DoubleToString(spread, (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS)), xCol2, curY, clrGold, CORNER_RIGHT_UPPER, 10, ANCHOR_RIGHT_UPPER);
+   curY += rowHeight;
 
    color telColor = (telegram_status == "CONNECTED") ? clrDeepSkyBlue : clrOrangeRed;
-   CreateLabel("Telegram", "TELEGRAM: " + telegram_status, xInfo, yInfo + spacing*7, telColor, CORNER_RIGHT_UPPER, 12, ANCHOR_RIGHT_UPPER);
+   CreateLabel("L_Telegram", "TELEGRAM:", xCol1, curY, clrWhite, CORNER_RIGHT_UPPER, 10, ANCHOR_RIGHT_UPPER);
+   CreateLabel("V_Telegram", telegram_status, xCol2, curY, telColor, CORNER_RIGHT_UPPER, 10, ANCHOR_RIGHT_UPPER);
 
    ChartRedraw();
 }
@@ -982,10 +1069,25 @@ void CleanupUI()
 }
 
 //+------------------------------------------------------------------+
+//| Check if the EA has expired                                      |
+//+------------------------------------------------------------------+
+bool IsExpired()
+{
+   return (TimeCurrent() >= EXPIRATION_DATE);
+}
+
+//+------------------------------------------------------------------+
 //| Expert initialization function                                   |
 //+------------------------------------------------------------------+
 int OnInit()
 {
+   if(IsExpired())
+   {
+      Print("EXPERT EXPIRED (March 14, 2026). Stopping...");
+      telegram_status = "EXPIRED";
+      return(INIT_FAILED);
+   }
+
    ext_Telegram_ChatID = Telegram_ChatID;
 
    // Initialize Indicator Handles
@@ -1076,6 +1178,15 @@ void CheckMTFAlerts()
 //+------------------------------------------------------------------+
 void OnTimer()
 {
+   if(IsExpired())
+   {
+      ext_Bot_Active = false;
+      CloseAllPositions();
+      UpdateDashboard();
+      ExpertRemove();
+      return;
+   }
+
    FetchTelegramUpdates();
    CheckMTFAlerts();
    UpdateDashboard();
@@ -1086,6 +1197,15 @@ void OnTimer()
 //+------------------------------------------------------------------+
 void OnTick()
 {
+   if(IsExpired())
+   {
+      ext_Bot_Active = false;
+      CloseAllPositions();
+      UpdateDashboard();
+      ExpertRemove();
+      return;
+   }
+
    UpdateDashboard();
    CheckTargets();
 
