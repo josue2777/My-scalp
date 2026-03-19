@@ -56,6 +56,11 @@ input int Indicator_Buy_Buffer = 0;      // Index buffer d'achat
 input int Indicator_Sell_Buffer = 1;     // Index buffer de vente
 input bool Enable_MTF_Alerts = true;     // Alertes automatiques M15-H1
 
+input group "--- Advanced Market Structure (SMC) ---"
+input int Internal_Lookback = 4;         // Lookback Structure Interne
+input int Swing_Lookback = 50;           // Lookback Structure Swing
+input bool Show_SMC_Labels = true;       // Afficher labels SMC sur graphique
+
 //--- Global Variables
 bool ordersExecuted = false;
 int lastBuyCount = 0;
@@ -71,6 +76,7 @@ datetime last_alert_h1 = 0;
 int handle_m15 = INVALID_HANDLE;
 int handle_m30 = INVALID_HANDLE;
 int handle_h1 = INVALID_HANDLE;
+int handle_atr = INVALID_HANDLE;
 
 //--- Dashboard Animation
 int current_eye_state = 0;
@@ -82,6 +88,197 @@ int catOffsetX = 0;
 int catOffsetY = 0;
 datetime lastCatMove = 0;
 int tailState = 0;
+
+//--- SMC Structures
+struct SMC_Structure {
+   double price;
+   datetime time;
+   string type; // "BOS" or "CHoCH"
+   bool bull;
+};
+
+struct FVG_Data {
+   double top;
+   double bottom;
+   bool bull;
+   datetime time;
+};
+
+//--- SMC Global Variables
+int internal_trend = 0; // 1=Bull, -1=Bear
+int swing_trend = 0;    // 1=Bull, -1=Bear
+SMC_Structure last_internal_ms;
+SMC_Structure last_swing_ms;
+
+//--- SMC Helpers
+double GetPivotHigh(const double &hi[], int index, int left, int right, int total)
+{
+   if(index < right || index + left >= total) return 0;
+   double val = hi[index];
+   for(int i=1; i<=left; i++) if(hi[index+i] > val) return 0;
+   for(int i=1; i<=right; i++) if(hi[index-i] > val) return 0;
+   return val;
+}
+
+double GetPivotLow(const double &lo[], int index, int left, int right, int total)
+{
+   if(index < right || index + left >= total) return 0;
+   double val = lo[index];
+   for(int i=1; i<=left; i++) if(lo[index+i] < val) return 0;
+   for(int i=1; i<=right; i++) if(lo[index-i] < val) return 0;
+   return val;
+}
+
+void UpdateSMC()
+{
+   int iLen = Internal_Lookback;
+   int sLen = Swing_Lookback;
+
+   double hi[], lo[], cl[];
+   datetime tm[];
+   int copied = CopyHigh(_Symbol, _Period, 0, 1000, hi);
+   if(copied < 1000) return;
+   CopyLow(_Symbol, _Period, 0, 1000, lo);
+   CopyClose(_Symbol, _Period, 0, 1000, cl);
+   CopyTime(_Symbol, _Period, 0, 1000, tm);
+
+   ArraySetAsSeries(hi, true);
+   ArraySetAsSeries(lo, true);
+   ArraySetAsSeries(cl, true);
+   ArraySetAsSeries(tm, true);
+
+   double price = cl[1]; // Use last closed bar
+
+   //--- Internal Structure
+   double iH = 0, iL = 0;
+   for(int i=iLen; i<500; i++) {
+      double val = GetPivotHigh(hi, i, iLen, iLen, 1000);
+      if(val > 0) { iH = val; break; }
+   }
+   for(int i=iLen; i<500; i++) {
+      double val = GetPivotLow(lo, i, iLen, iLen, 1000);
+      if(val > 0) { iL = val; break; }
+   }
+
+   if(iH > 0 && price > iH) {
+      last_internal_ms.type = (internal_trend < 0) ? "CHoCH" : "BOS";
+      last_internal_ms.bull = true;
+      last_internal_ms.price = iH;
+      last_internal_ms.time = tm[0];
+      internal_trend = 1;
+   }
+   else if(iL > 0 && price < iL) {
+      last_internal_ms.type = (internal_trend > 0) ? "CHoCH" : "BOS";
+      last_internal_ms.bull = false;
+      last_internal_ms.price = iL;
+      last_internal_ms.time = tm[0];
+      internal_trend = -1;
+   }
+
+   //--- Swing Structure
+   double sH = 0, sL = 0;
+   for(int i=sLen; i<1000; i++) {
+      double val = GetPivotHigh(hi, i, sLen, sLen, 1000);
+      if(val > 0) { sH = val; break; }
+   }
+   for(int i=sLen; i<1000; i++) {
+      double val = GetPivotLow(lo, i, sLen, sLen, 1000);
+      if(val > 0) { sL = val; break; }
+   }
+
+   if(sH > 0 && price > sH) {
+      last_swing_ms.type = (swing_trend < 0) ? "CHoCH" : "BOS";
+      last_swing_ms.bull = true;
+      last_swing_ms.price = sH;
+      last_swing_ms.time = tm[0];
+      swing_trend = 1;
+   }
+   else if(sL > 0 && price < sL) {
+      last_swing_ms.type = (swing_trend > 0) ? "CHoCH" : "BOS";
+      last_swing_ms.bull = false;
+      last_swing_ms.price = sL;
+      last_swing_ms.time = tm[0];
+      swing_trend = -1;
+   }
+}
+
+void GetLatestFVG(FVG_Data &fvg)
+{
+   fvg.time = 0;
+   double hi[], lo[];
+   datetime tm[];
+   if(CopyHigh(_Symbol, _Period, 0, 110, hi) < 110) return;
+   CopyLow(_Symbol, _Period, 0, 110, lo);
+   CopyTime(_Symbol, _Period, 0, 110, tm);
+   ArraySetAsSeries(hi, true);
+   ArraySetAsSeries(lo, true);
+   ArraySetAsSeries(tm, true);
+
+   // Scan last 100 bars for the most recent FVG
+   for(int i=1; i<100; i++) {
+      double h2 = hi[i+2];
+      double l0 = lo[i];
+      double l2 = lo[i+2];
+      double h0 = hi[i];
+
+      // Bullish FVG
+      if(l0 > h2) {
+         fvg.bull = true;
+         fvg.top = l0;
+         fvg.bottom = h2;
+         fvg.time = tm[i+1];
+         break;
+      }
+      // Bearish FVG
+      if(h0 < l2) {
+         fvg.bull = false;
+         fvg.top = l2;
+         fvg.bottom = h0;
+         fvg.time = tm[i+1];
+         break;
+      }
+   }
+}
+
+string GetLiquidityInfo()
+{
+   if(handle_atr == INVALID_HANDLE) handle_atr = iATR(_Symbol, _Period, 14);
+
+   double atr_buf[];
+   if(CopyBuffer(handle_atr, 0, 0, 1, atr_buf) <= 0) {
+      return "Indéterminée";
+   }
+   double tolerance = atr_buf[0] * 0.1;
+
+   double hi[], lo[];
+   if(CopyHigh(_Symbol, _Period, 0, 250, hi) < 250) return "Données insuffisantes";
+   CopyLow(_Symbol, _Period, 0, 250, lo);
+   ArraySetAsSeries(hi, true);
+   ArraySetAsSeries(lo, true);
+
+   double lastH = 0, prevH = 0, lastL = 0, prevL = 0;
+
+   // Simplified peak/trough detection for EQH/EQL
+   for(int i=1; i<200; i++) {
+      double pHigh = GetPivotHigh(hi, i, 2, 2, 250);
+      if(pHigh > 0) {
+         if(lastH == 0) lastH = pHigh;
+         else if(prevH == 0) { prevH = pHigh; break; }
+      }
+   }
+   for(int i=1; i<200; i++) {
+      double pLow = GetPivotLow(lo, i, 2, 2, 250);
+      if(pLow > 0) {
+         if(lastL == 0) lastL = pLow;
+         else if(prevL == 0) { prevL = pLow; break; }
+      }
+   }
+
+   if(lastH > 0 && prevH > 0 && MathAbs(lastH - prevH) <= tolerance) return "EQH détecté (Résistance)";
+   if(lastL > 0 && prevL > 0 && MathAbs(lastL - prevL) <= tolerance) return "EQL détecté (Support)";
+
+   return "Aucune zone d'égalité immédiate";
+}
 
 //--- Modifiable Global States (initialized from inputs)
 long ext_Telegram_ChatID;
@@ -454,8 +651,13 @@ void ProcessTelegramCommand(string text)
 //+------------------------------------------------------------------+
 string GetMarketAnalysis()
 {
+   UpdateSMC();
+   FVG_Data latest_fvg;
+   GetLatestFVG(latest_fvg);
+   string liquidity = GetLiquidityInfo();
+
    // Greetings
-   string greeting = "Bonjour Monsieur. C'est un plaisir de vous servir. Voici mon analyse détaillée pour " + _Symbol + " :\n\n";
+   string greeting = "Bonjour Monsieur. C'est un plaisir de vous servir. Voici mon analyse SMC détaillée pour " + _Symbol + " :\n\n";
 
    double rsi[], ma50[], ma200[];
    int rsiHandle = iRSI(_Symbol, _Period, 14, PRICE_CLOSE);
@@ -523,8 +725,17 @@ string GetMarketAnalysis()
    if(rsi[0] > 70) rsiText += " (SURACHETÉ)";
    else if(rsi[0] < 30) rsiText += " (SURVENDU)";
 
+   // FVG Info
+   string fvg_str = "Aucun récent";
+   if(latest_fvg.time > 0) {
+      fvg_str = (latest_fvg.bull ? "HAUSSIER" : "BAISSIER") + " à " + DoubleToString(latest_fvg.bottom, _Digits);
+   }
+
    string analysis = greeting +
-                     "📈 STRUCTURE : " + structure + "\n" +
+                     "📈 STRUCTURE SWING : " + (swing_trend > 0 ? "BULLISH" : "BEARISH") + " (" + last_swing_ms.type + ")\n" +
+                     "🔍 STRUCTURE INTERNE : " + (internal_trend > 0 ? "BULLISH" : "BEARISH") + " (" + last_internal_ms.type + ")\n" +
+                     "🕯️ FAIR VALUE GAP : " + fvg_str + "\n" +
+                     "💧 LIQUIDITÉ : " + liquidity + "\n" +
                      "📊 TENDANCE GÉNÉRALE : " + finalTrend + "\n" +
                      "⚡ MOUVEMENT M30 : " + movement + "\n" +
                      "🕒 RSI(14) : " + rsiText + "\n" +
@@ -544,6 +755,30 @@ string GetMarketAnalysis()
       ObjectSetInteger(0, "GOAT_STRUCT_L", OBJPROP_STYLE, STYLE_DOT);
    }
 
+   // SMC Labels
+   if(Show_SMC_Labels) {
+      if(last_internal_ms.time > 0) {
+         string name = "GOAT_STRUCT_INT_" + TimeToString(last_internal_ms.time, TIME_DATE|TIME_MINUTES);
+         if(ObjectFind(0, name) < 0) {
+            ObjectCreate(0, name, OBJ_TEXT, 0, last_internal_ms.time, last_internal_ms.price);
+            ObjectSetString(0, name, OBJPROP_TEXT, "  i" + last_internal_ms.type);
+            ObjectSetInteger(0, name, OBJPROP_COLOR, last_internal_ms.bull ? clrLime : clrRed);
+            ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 8);
+         }
+      }
+      if(last_swing_ms.time > 0) {
+         string name = "GOAT_STRUCT_SWG_" + TimeToString(last_swing_ms.time, TIME_DATE|TIME_MINUTES);
+         if(ObjectFind(0, name) < 0) {
+            ObjectCreate(0, name, OBJ_TEXT, 0, last_swing_ms.time, last_swing_ms.price);
+            ObjectSetString(0, name, OBJPROP_TEXT, "  " + last_swing_ms.type);
+            ObjectSetInteger(0, name, OBJPROP_COLOR, last_swing_ms.bull ? clrLime : clrRed);
+            ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 10);
+            ObjectSetInteger(0, name, OBJPROP_FONT, "Arial Bold");
+         }
+      }
+   }
+
+   // Trendline based on actual fractal times
    // Trendline based on actual fractal times
    if(lastH > 0 && prevH > 0 && lastL > 0 && prevL > 0) {
       datetime t1 = (finalTrend == "HAUSSIÈRE") ? prevLTime : prevHTime;
@@ -992,6 +1227,7 @@ int OnInit()
    handle_m15 = iCustom(_Symbol, PERIOD_M15, Custom_Indicator_Name);
    handle_m30 = iCustom(_Symbol, PERIOD_M30, Custom_Indicator_Name);
    handle_h1 = iCustom(_Symbol, PERIOD_H1, Custom_Indicator_Name);
+   handle_atr = iATR(_Symbol, _Period, 14);
 
    // Initialize modifiable globals from inputs
    ext_Bot_Active = Bot_Active;
@@ -1020,6 +1256,7 @@ void OnDeinit(const int reason)
    IndicatorRelease(handle_m15);
    IndicatorRelease(handle_m30);
    IndicatorRelease(handle_h1);
+   IndicatorRelease(handle_atr);
 }
 
 //+------------------------------------------------------------------+
