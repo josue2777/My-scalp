@@ -1,0 +1,93 @@
+// This work is licensed under Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+// https://creativecommons.org/licenses/by-nc-sa/4.0/
+// (c) BigBeluga
+
+//@version=6
+indicator("Pivot Levels [BigBeluga]", overlay = true, max_lines_count = 500, max_bars_back = 5000)
+
+// INPUTS
+pivot1   = input.bool(true, "Pivot 1", inline = "1")
+len1     = input.int(5, "", inline = "1")
+style1   = input.string("--", "Style:", ["--", "-", ".."], inline = "1")
+extendM1 = input.string("Both", "Extend:", ["Both", "Right"], inline = "1") == "Both"
+
+pivot2   = input.bool(true, "Pivot 2", inline = "2")
+len2     = input.int(25, "", inline = "2")
+style2   = input.string("-", "Style:", ["--", "-", ".."], inline = "2")
+extendM2 = input.string("Both", "Extend:", ["Both", "Right"], inline = "2") == "Both"
+
+pivot3   = input.bool(true, "Pivot 3", inline = "3")
+len3     = input.int(50, "", inline = "3")
+style3   = input.string("-", "Style:", ["--", "-", ".."], inline = "3")
+extendM3 = input.string("Both", "Extend:", ["Both", "Right"], inline = "3") == "Both"
+
+pivot4   = input.bool(true, "Pivot 4", inline = "4")
+len4     = input.int(100, "", inline = "4")
+style4   = input.string("-", "Style:", ["--", "-", ".."], inline = "4")
+extendM4 = input.string("Both", "Extend:", ["Both", "Right"], inline = "4") == "Both"
+
+colorSup    = input.color(color.rgb(30, 214, 125), "", inline = "colors")
+colorRes    = input.color(#eb7c14, "", inline = "colors")
+colorActive = input.color(color.rgb(27, 133, 255), "", inline = "colors")
+
+type PivotLvl
+    int len
+    float lvlH
+    float lvlL
+    bool disp
+    string stl
+    int sH
+    int sL
+    bool ext
+
+var Lines  = array.new<line>()
+var Labels = array.new<label>()
+
+// CALCULATIONS
+ph1 = ta.pivothigh(len1, len1)
+pl1 = ta.pivotlow(len1, len1)
+
+ph2 = ta.pivothigh(len2, len2)
+pl2 = ta.pivotlow(len2, len2)
+
+ph3 = ta.pivothigh(len3, len3)
+pl3 = ta.pivotlow(len3, len3)
+
+ph4 = ta.pivothigh(len4, len4)
+pl4 = ta.pivotlow(len4, len4)
+
+atr = ta.atr(200) * 1.5
+
+Levels = array.from(
+     PivotLvl.new(len1, ta.valuewhen(not na(ph1), high[len1], 0), ta.valuewhen(not na(pl1), low[len1], 0), pivot1, style1, ta.valuewhen(not na(ph1), bar_index[len1], 0), ta.valuewhen(not na(pl1), bar_index[len1], 0), extendM1),
+     PivotLvl.new(len2, ta.valuewhen(not na(ph2), high[len2], 0), ta.valuewhen(not na(pl2), low[len2], 0), pivot2, style2, ta.valuewhen(not na(ph2), bar_index[len2], 0), ta.valuewhen(not na(pl2), bar_index[len2], 0), extendM2),
+     PivotLvl.new(len3, ta.valuewhen(not na(ph3), high[len3], 0), ta.valuewhen(not na(pl3), low[len3], 0), pivot3, style3, ta.valuewhen(not na(ph3), bar_index[len3], 0), ta.valuewhen(not na(pl3), bar_index[len3], 0), extendM3),
+     PivotLvl.new(len4, ta.valuewhen(not na(ph4), high[len4], 0), ta.valuewhen(not na(pl4), low[len4], 0), pivot4, style4, ta.valuewhen(not na(ph4), bar_index[len4], 0), ta.valuewhen(not na(pl4), bar_index[len4], 0), extendM4)
+ )
+
+drawLevel(H, L, length, style_, startH, startL, extendM)=>
+    if barstate.islast
+        line_style = style_ == "--" ? line.style_dashed : style_ == "-" ? line.style_solid : style_ == ".." ? line.style_dotted : line.style_solid
+        w1 = length == len1 ? 1 : length == len2 ? 2 : length == len3 ? 3 : 4
+        w2 = length == len1 ? 3 : length == len2 ? 7 : length == len3 ? 10 : 15
+        c1 = low > H + atr ? colorSup : high < H - atr ? colorRes : colorActive
+        c2 = low > L + atr ? colorSup : high < L - atr ? colorRes : colorActive
+        ex = extendM ? extend.both : extend.right
+        Lines.push(line.new(startH, H, bar_index, H, color = c1, extend = ex, style = line_style, width = w1))
+        Lines.push(line.new(startL, L, bar_index, L, color = c2, extend = ex, style = line_style, width = w1))
+        Lines.push(line.new(startH, H, bar_index, H, color = color.new(c1, 80), extend = ex, width = w2))
+        Lines.push(line.new(startL, L, bar_index, L, color = color.new(c2, 80), extend = ex, width = w2))
+        Labels.push(label.new(bar_index + 15, H, str.tostring(H, "###,###,###.####"), textcolor = c1, color = chart.bg_color, style = label.style_label_center))
+        Labels.push(label.new(bar_index + 15, L, str.tostring(L, "###,###,###.####"), textcolor = c2, color = chart.bg_color, style = label.style_label_center))
+
+// PLOT
+if barstate.islast
+    for l in Lines
+        l.delete()
+    Lines.clear()
+    for l in Labels
+        l.delete()
+    Labels.clear()
+    for l in Levels
+        if l.disp
+            drawLevel(l.lvlH, l.lvlL, l.len, l.stl, l.sH, l.sL, l.ext)
