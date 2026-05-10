@@ -14,53 +14,6 @@ int  ReadFile(long hFile, uchar &lpBuffer[], uint nNumberOfBytesToRead, uint &lp
 int  CloseHandle(long hObject);
 #import
 
-//--- MQL4 to MQL5 Compatibility Defines
-#define MODE_LOW 1
-#define MODE_HIGH 2
-
-double iHigh(string symbol, ENUM_TIMEFRAMES tf, int index)
-{
-   double high[];
-   ArraySetAsSeries(high, true);
-   if(CopyHigh(symbol, tf, index, 1, high) > 0) return high[0];
-   return 0;
-}
-
-double iLow(string symbol, ENUM_TIMEFRAMES tf, int index)
-{
-   double low[];
-   ArraySetAsSeries(low, true);
-   if(CopyLow(symbol, tf, index, 1, low) > 0) return low[0];
-   return 0;
-}
-
-datetime iTime(string symbol, ENUM_TIMEFRAMES tf, int index)
-{
-   datetime time[];
-   ArraySetAsSeries(time, true);
-   if(CopyTime(symbol, tf, index, 1, time) > 0) return time[0];
-   return 0;
-}
-
-int iHighest(string symbol, ENUM_TIMEFRAMES tf, int type, int count, int start)
-{
-   double buffer[];
-   int copied = CopyHigh(symbol, tf, start, count, buffer);
-   if(copied <= 0) return -1;
-   int res = ArrayMaximum(buffer);
-   if(res != -1) return res + start;
-   return -1;
-}
-
-int iLowest(string symbol, ENUM_TIMEFRAMES tf, int type, int count, int start)
-{
-   double buffer[];
-   int copied = CopyLow(symbol, tf, start, count, buffer);
-   if(copied <= 0) return -1;
-   int res = ArrayMinimum(buffer);
-   if(res != -1) return res + start;
-   return -1;
-}
 
 CTrade trade;
 CPositionInfo pos;
@@ -862,7 +815,7 @@ double findLow()
    for(int i = 0; i < 400; i++)
      {
       double low = iLow(_Symbol, Timeframe, i);
-      if(i > BarsN && iLowest(_Symbol, Timeframe, 0, BarsN*2+1, i-BarsN) == i)
+      if(i > BarsN && iLowest(_Symbol, Timeframe, MODE_LOW, BarsN*2+1, i-BarsN) == i)
         {
          if(low < lowestLow)
            {
