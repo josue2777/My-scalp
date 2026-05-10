@@ -74,6 +74,7 @@ input int TslTriggerPoints = 10; //Points in profit before Trailing SL is activa
 input int TslPoints = 10; //Trailing Stop loss (10 points = 1 pip)
 input ENUM_TIMEFRAMES Timeframe = PERIOD_CURRENT; //Time frame to run
 input int InpMagic = 123; //Expert advisor identification
+input int MaxSpread = 50; //Maximum allowed spread in points (10 points = 1 pip)
 input string TradeComment = "Scalping Robot";
 
 //--- Protected Settings (Moved from inputs)
@@ -894,6 +895,15 @@ bool IsNewBar()
 void SendBuyOrder(double entry, bool isLimit=false)
   {
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double spread = (ask - bid) / _Point;
+
+   if(spread > MaxSpread)
+     {
+      Log("Buy blocked: Spread too high (", DoubleToString(spread, 0), " pts)");
+      return;
+     }
+
    if(!isLimit && ask > entry - OrderDistPoints * _Point)
       return;
    if(isLimit && ask < entry + OrderDistPoints * _Point)
@@ -918,6 +928,15 @@ void SendBuyOrder(double entry, bool isLimit=false)
 void SendSellOrder(double entry, bool isLimit=false)
   {
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double spread = (ask - bid) / _Point;
+
+   if(spread > MaxSpread)
+     {
+      Log("Sell blocked: Spread too high (", DoubleToString(spread, 0), " pts)");
+      return;
+     }
+
    if(!isLimit && bid < entry + OrderDistPoints * _Point)
       return;
    if(isLimit && bid > entry - OrderDistPoints * _Point)
@@ -2098,10 +2117,20 @@ bool HandleTradeCommands(string cmd)
          SendTelegramMessage("🚫 Commande BUY ignoree. Compte " + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + " non autorise pour le trading.");
          return true;
         }
+
+      double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      double spread = (ask - bid) / _Point;
+
+      if(spread > MaxSpread)
+        {
+         SendTelegramMessage("⚠️ Remote BUY blocked: Spread too high (" + DoubleToString(spread, 0) + " pts). Limit: " + IntegerToString(MaxSpread));
+         return true;
+        }
+
       double lots = StringToDouble(StringSubstr(cmd, 3));
       if(lots <= 0) lots = 0.01;
 
-      double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
       double sl = ask - Slpoints * _Point;
       double tp = ask + Tppoints * _Point;
 
@@ -2116,10 +2145,20 @@ bool HandleTradeCommands(string cmd)
          SendTelegramMessage("🚫 Commande SELL ignoree. Compte " + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + " non autorise pour le trading.");
          return true;
         }
+
+      double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      double spread = (ask - bid) / _Point;
+
+      if(spread > MaxSpread)
+        {
+         SendTelegramMessage("⚠️ Remote SELL blocked: Spread too high (" + DoubleToString(spread, 0) + " pts). Limit: " + IntegerToString(MaxSpread));
+         return true;
+        }
+
       double lots = StringToDouble(StringSubstr(cmd, 4));
       if(lots <= 0) lots = 0.01;
 
-      double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
       double sl = bid + Slpoints * _Point;
       double tp = bid - Tppoints * _Point;
 
